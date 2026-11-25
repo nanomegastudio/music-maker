@@ -5,6 +5,26 @@ A music-making app that runs in your browser. No install needed.
 ## Start it
 Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge works best.
 
+## New in v2.4: the parts listen to each other (from the "What composers still do" research, gaps 1 to 3)
+- **Every part has its own register.** Chords and pads are now voiced under the melody's lowest note in each 4-bar
+  phrase, so they no longer play in the middle of the tune (the pad used to sit inside the melody's octave in about a
+  quarter of its notes; now it never does). The arpeggio plays above the melody while it sings, or under it when the
+  instrument has no room up there. Each part also stays in its instrument's comfortable range (a table for all 128
+  General MIDI sounds), and a melody that falls mostly outside its instrument's range moves by an octave.
+- **Voice-led chords.** Each chord is voiced from the one before it: the nearest notes, shared notes held, a smooth
+  top voice, and no muddy close thirds down low. Inversions come out of this naturally. Choruses spread the voicing
+  open, and the fullest choruses double the bottom note an octave down instead of adding a top note over the melody.
+  Power chords move to the nearest root instead of always sitting on E2 to D♯3.
+- **A bass line, not just roots.** The bass is now written after the melody and planned as a line: octaves follow the
+  line (no jump where B wraps to C), the chord's third goes in the bass when that makes a stepwise line
+  (I – V/7 – vi, C–B–A), at a rate set by style (often in pop, gospel, classical and film; never in rock, blues or
+  walking jazz bass). Intros and outros can hold a tonic **pedal**, builds and some pre-choruses a dominant pedal.
+  Before a section of equal or more energy the bass can **walk up** to the next section's first note. Parallel
+  octaves and fifths with the melody on the beat are fixed where another chord tone works (about two in three).
+  The status bar reports inversions, pedals, walk-ups and fixes after Generate.
+- 🎲 on bass, chords, pad or arpeggio, ↻ on a section and chord-lane changes all place the part against the current
+  melody and the track's own instrument.
+
 ## New in v2.3: less repetition (from the "Keeping songs fresh" research)
 - **Longer ideas, heard less often.** Melodies now grow from a 2-bar idea (6–10 notes) in 8-bar phrases instead of a
   1-bar motif restated at the start of every 4 bars. About half of each phrase is new material (contrast,
@@ -34,6 +54,8 @@ Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge wo
   forward, Loudness, Lo-fi radio, Small speakers, Clear the mud) and an on/off switch to compare. It changes the sound
   while it plays, is remembered in the browser and saved with projects. It shapes the sampled and synth sounds;
   MIDI devices and exported .mid files are not changed. Double-click a slider to reset that band.
+- **Quieter drums by default**: new songs and new drum tracks start the drums at a third of the old volume (0.27
+  instead of 0.8). Songs you saved keep their own volumes.
 
 ## What it does
 - **Generator**: pick a style (Pop, Lo-fi, Rock, Electronic, Ambient), key, scale and melody form, then click
@@ -150,6 +172,7 @@ Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge wo
 - `js/app.js`: UI, piano roll, sequencer
 - `js/audio.js`: sound engines (samples, synth, MIDI out)
 - `js/generator.js`: song generator (chords, bass, drums, arrangement)
+- `js/arrange.js`: instrument ranges, register plan, chord voice leading, bass line planning and the bass–melody check
 - `js/songform.js`: song form (section plans, per-section chords and energy, exact returns with one change)
 - `js/melody.js`: melody engine (phrase → riff, motif development, candidate scoring, answer / re-pitch)
 - `js/midifile.js`: .mid export/import

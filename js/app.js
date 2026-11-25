@@ -26,7 +26,7 @@
   function newTrack(opts = {}) {
     const id = nextId++;
     return Object.assign({
-      id, name: opts.drum ? 'Drums' : 'Track ' + id, program: 0, drum: false, volume: 0.8, pan: 0,
+      id, name: opts.drum ? 'Drums' : 'Track ' + id, program: 0, drum: false, volume: opts.drum ? 0.27 : 0.8, pan: 0,
       mute: false, solo: false, color: COLORS[(id - 1) % COLORS.length], role: null, notes: []
     }, opts, { id });
   }
@@ -80,9 +80,30 @@
     };
   }
 
-  const ROLE_VOL = { chords: 0.6, melody: 0.85, riff: 0.65, drums: 0.8, bass: 0.8, harmony: 0.55, counter: 0.6, pad: 0.45, arp: 0.5, lead: 0.7 };
+  const ROLE_VOL = { chords: 0.6, melody: 0.85, riff: 0.65, drums: 0.27, bass: 0.8, harmony: 0.55, counter: 0.6, pad: 0.45, arp: 0.5, lead: 0.7 };
   const FOLLOWERS = ['harmony', 'counter', 'lead'];      // parts written from the melody
-  const melodyCtx = () => { const m = song.tracks.find(t => t.role === 'melody'); return { melody: m ? m.notes : [] }; };
+  // v2.4: the parts placed against the melody also get the melody without its section octave moves (melodyBase),
+  // and every part's own instrument, so ranges follow what the track really plays
+  // v2.4: one line on how the bass was written (inversions, pedal points, walk-ups, outer voices checked)
+  function arrangeReport() {
+    const a = Generator.lastInfo.arrange;
+    if (!a || a.inversions == null) return '';
+    const bits = [];
+    if (a.inversions) bits.push(`${a.inversions} chord${a.inversions === 1 ? '' : 's'} in first inversion`);
+    if (a.pedalBars) bits.push(`a pedal note under ${a.pedalBars} bar${a.pedalBars === 1 ? '' : 's'}`);
+    if (a.walkUps) bits.push(`${a.walkUps} walk-up${a.walkUps === 1 ? '' : 's'} into sections`);
+    if (a.bassParallelsFixed) bits.push(`${a.bassParallelsFixed} parallel octave${a.bassParallelsFixed === 1 ? '' : 's'} or fifth${a.bassParallelsFixed === 1 ? '' : 's'} with the melody fixed`);
+    return bits.length ? `Bass: ${bits.join(', ')}. ` : '';
+  }
+  const melodyCtx = () => {
+    const m = song.tracks.find(t => t.role === 'melody');
+    const programs = {};
+    song.tracks.forEach(t => { if (t.role && !t.drum && programs[t.role] == null) programs[t.role] = t.program; });
+    if (!m) return { melody: [], programs };
+    const secList = (song.gen && song.gen.sections) || [];
+    const oct = n => { const s = secList.find(x => n.s >= x.start * 16 && n.s < (x.start + x.len) * 16); return s && s.oct && s.oct[m.id] ? s.oct[m.id] : 0; };
+    return { melody: m.notes, melodyBase: m.notes.map(n => { const k = oct(n); return k ? Object.assign({}, n, { p: n.p - 12 * k }) : n; }), programs };
+  };
   // when the melody changes, the parts that follow it are rewritten to match
   function refreshFollowers(gen) {
     let n = 0;
@@ -1390,7 +1411,9 @@
     const a = s.start * 16, b = (s.start + s.len) * 16;
     const seed = Date.now() >>> 0;
     let n = 0;
-    const ordered = song.tracks.map((t, k) => [t, k]).sort((x, y) => (Generator.EXTRA_ROLES.includes(x[0].role) ? 1 : 0) - (Generator.EXTRA_ROLES.includes(y[0].role) ? 1 : 0));
+    // the melody first (v2.4: bass, chords and pad are placed against it), the parts that follow it last
+    const rank = t => t.role === 'melody' ? 0 : Generator.EXTRA_ROLES.includes(t.role) ? 2 : 1;
+    const ordered = song.tracks.map((t, k) => [t, k]).sort((x, y) => rank(x[0]) - rank(y[0]));
     ordered.forEach(([t, k]) => {
       const role = t.drum ? 'drums' : t.role;
       if (!role) return;
@@ -2192,7 +2215,7 @@
       if (s.gen && s.gen.loop) $('btnLoop').classList.add('on');   // game loops play round and round
       if (s.gen && s.gen.stinger) $('btnLoop').classList.remove('on');   // a stinger plays once
       detachProject();
-      const formInfo = (Generator.lastInfo.form ? `Form: ${Generator.lastInfo.form}. ` : '') + (Generator.lastInfo.band && Generator.lastInfo.band.length ? Generator.lastInfo.band.join('. ') + '. ' : '');
+      const formInfo = (Generator.lastInfo.form ? `Form: ${Generator.lastInfo.form}. ` : '') + (Generator.lastInfo.band && Generator.lastInfo.band.length ? Generator.lastInfo.band.join('. ') + '. ' : '') + arrangeReport();
       status(`Generated “${s.name}” at ${s.bpm} BPM. ${formInfo}${riffReport()} ${melodyReport()} Space plays.`, true);
       if (Generator.lastInfo.riff) $('phraseInfo').textContent = riffReport();
       selTrackId = (s.tracks.find(t => t.role === 'melody') || s.tracks[0]).id;

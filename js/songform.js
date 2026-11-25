@@ -363,46 +363,118 @@
     return notes;
   }
 
-  function bass(gen, r, H) {
+  // v2.4 (gap 3): the bass is planned from the chords and checked against the melody.
+  //   - octaves follow the line (nearest to the previous note), in the bass instrument's range
+  //   - first inversions where they make a stepwise bass line, at the style's rate
+  //   - pedal points: a held tonic in intros and outros, a held dominant under builds and some pre-choruses
+  //   - a walk-up into a section of equal or more energy
+  //   - no parallel octaves or fifths with the melody on the beat
+  // ctx: { melodyHome: the melody in home-key pitches (or none), program }
+  function bass(gen, r, H, ctx = {}) {
+    const A = H.Arrange;
     const st = H.STYLES[gen.style] || H.STYLES['Pop'];
     const notes = [];
-    // the root under step s of bar b (a bar may hold two chords)
-    const rootOf = (b, s = 0) => { const pcs = H.chordPCs(gen.key, gen.scale, H.chordAtStep(degreeAt(gen, b), s), false); return 36 + ((pcs[0] - 36) % 12 + 12) % 12; };
+    const total_ = total(gen.sections);
+    const rg = A.rangeOf(ctx.program != null ? ctx.program : 33);
+    const lo = Math.max(rg.lo, 31), hi = Math.min(rg.hi, lo + 21);
+    const pcsAt = (b, s = 0) => H.chordPCs(gen.key, gen.scale, H.chordAtStep(degreeAt(gen, b), s), false);
     const split = b => Array.isArray(degreeAt(gen, b));
+    const invRate = H.invRate(gen);
+    const tonic = ((gen.key % 12) + 12) % 12, dominant = (tonic + 7) % 12;
+    const pedalFriendly = st.edm || st.calm || ['Classical', 'Cinematic', 'Gospel', 'Ambient', 'Synthwave', 'Menu / title theme', 'Sci-fi space', 'Dungeon / cave', 'Horror ambience'].includes(gen.style);
+    const pedals = new Map();
     gen.sections.forEach(sec => {
-      const E = sec.energy;
+      if (st.walk || st.power || sec.change === 'reharm' || sec.len < 4) return;
+      let pc = null;
+      if ((sec.type === 'I' || sec.type === 'O') && r.chance(pedalFriendly ? 0.6 : 0.2)) pc = tonic;
+      else if (sec.type === 'U' && r.chance(0.6)) pc = st.edm && r.chance(0.5) ? tonic : dominant;
+      else if (sec.type === 'P' && r.chance(pedalFriendly ? 0.4 : 0.2)) pc = dominant;
+      if (pc == null) return;
+      // the outro's last bar and the pre-chorus's last bar return to the real chord
+      for (let b = sec.start; b < sec.start + sec.len - (sec.type === 'O' || sec.type === 'P' ? 1 : 0); b++) pedals.set(b, pc);
+    });
+    const { at, plan: bplan } = A.planBass({ bars: total_, pcsAt, split, lo, hi, invRate, r, pedalAt: b => pedals.has(b) ? pedals.get(b) : null });
+    let walks = 0;
+    const melody = ctx.melodyHome || [];
+    const scalePcs = H.scalePcs(gen);
+    gen.sections.forEach((sec, si) => {
+      const E = sec.energy, next = gen.sections[si + 1];
       for (let bi = 0; bi < sec.len; bi++) {
         const b = sec.start + bi;
         if (E <= 1) continue;
         if (sec.change === 'dropout' && bi < sec.len / 2) continue;
         if (sec.type === 'U' && bi === sec.len - 1) continue;              // silence before the drop
         const pattern = E === 2 ? (sec.type === 'K' && !split(b) ? [[0, 16, 0]] : [[0, 8, 0], [8, 8, 0]]) : st.bass;
+        const bar = [];
         pattern.forEach(([s, l, iv], i) => {
-          let p = rootOf(b, s) + iv;
+          const x = at(b, s);
+          let p = A.patternPitch(x, iv);
           if (split(b) && s < 8 && s + l > 8) l = 8 - s;
-          if (E >= 3 && i === pattern.length - 1 && pattern.length > 2 && r.chance(st.walk ? 0.85 : 0.25)) p = rootOf(b + 1) + (r.chance(0.5) ? -1 : 2);
-          notes.push({ p, s: b * 16 + s, l, v: H.humanVel(r, (s % 4 === 0 ? 100 : 86) - (E === 2 ? 12 : 0) + (E >= 5 ? 6 : 0), 6) });
+          // approach note into the next chord's bass (whatever it is: root, inversion or pedal)
+          if (E >= 3 && i === pattern.length - 1 && pattern.length > 2 && !x.pedal && r.chance(st.walk ? 0.85 : 0.25)) {
+            const nx = at(b + 1, 0);
+            if (nx) p = nx.p + (r.chance(0.5) ? -1 : 2);
+          }
+          const onset = s === x.s;
+          const alts = onset ? (x.inv || x.pedal ? [] : [A.bassNote(x.pcs[1], x.p, lo, hi + 5)]) : x.pcs.map(pc => A.bassNote(pc, p, lo, hi + 12)).filter(q => q !== p);
+          bar.push({ p, s: b * 16 + s, l, v: H.humanVel(r, (s % 4 === 0 ? 100 : 86) - (E === 2 ? 12 : 0) + (E >= 5 ? 6 : 0), 6), alts: invRate > 0 || !onset ? alts : [] });
         });
+        // walk-up into the next section (scale steps up to its first bass note)
+        const lastBar = bi === sec.len - 1;
+        if (lastBar && next && next.energy >= E && E >= 2 && !st.edm && !st.calm && !st.walk && sec.type !== 'U' && !pedals.has(b) && r.chance(0.55)) {
+          const nx = at(b + 1, 0);
+          if (nx) {
+            const target = nx.p + keyShiftAt(gen, b + 1) - keyShiftAt(gen, b);
+            const pool = [];
+            for (let q = lo - 12; q <= hi + 12; q++) if (scalePcs.includes(((q % 12) + 12) % 12)) pool.push(q);
+            let ti = pool.findIndex(q => q >= target); if (ti < 0) ti = pool.length - 1;
+            const fast = (H.STYLES[gen.style] || {}).bpm < 135;
+            const steps = fast ? [8, 10, 12, 14] : [8, 12];
+            const up = ti - steps.length >= 0 && pool[ti - steps.length] >= lo - 2;
+            const walk = steps.map((s, k) => pool[Math.max(0, Math.min(pool.length - 1, up ? ti - steps.length + k : ti + steps.length - k))]);
+            for (let k = bar.length - 1; k >= 0; k--) if (bar[k].s - b * 16 >= 8) bar.splice(k, 1);
+            bar.forEach(n => { if (n.s - b * 16 < 8 && n.s - b * 16 + n.l > 8) n.l = 8 - (n.s - b * 16); });
+            walks++;
+            steps.forEach((s, k) => bar.push({ p: walk[k], s: b * 16 + s, l: steps.length === 4 ? 2 : 4, v: H.humanVel(r, 90 + k * 3, 4) }));
+          }
+        }
+        notes.push(...bar);
       }
     });
+    const rep = A.fixParallels(notes, melody, t => t % 8 === 0);
+    if (ctx.report) Object.assign(ctx.report, { bassParallelsFixed: rep.fixed, bassParallelsLeft: rep.left, pedalBars: pedals.size, inversions: bplan.filter(x => x.inv).length, walkUps: walks });
     return notes;
   }
 
-  function chords(gen, r, H) {
+  // v2.4 (gaps 1 and 2): chords are voice-led from the previous chord (nearest notes, common tones held, smooth top
+  // voice, inversions as they fall out), in a lane under the melody's lowest note in that bar and inside the
+  // instrument's range. Big sections spread the voicing open; the fullest add the bottom note an octave down.
+  function chords(gen, r, H, ctx = {}) {
+    const A = H.Arrange;
     const st = H.STYLES[gen.style] || H.STYLES['Pop'];
     const notes = [];
+    const program = ctx.program != null ? ctx.program : 0;
+    const rg = A.rangeOf(program);
+    const prof = A.melodyProfile(ctx.melodyHome || [], total(gen.sections), gen.sections, null);
+    let prev = null;
     gen.sections.forEach(sec => {
       const E = sec.energy;
       for (let bi = 0; bi < sec.len; bi++) {
         const b = sec.start + bi;
         const cell = degreeAt(gen, b), two = Array.isArray(cell) && cell.length > 1;
+        const lane = A.laneUnder(prof, b, program, 1, st.power ? 40 : 45);
+        const voices = {};
         const voice = s => {
+          const k = two && s >= 8 ? 1 : 0;
+          if (voices[k]) return voices[k];
           const pcs = H.chordPCs(gen.key, gen.scale, H.chordAtStep(cell, s), st.sevenths);
           let pitches;
-          if (st.power) { const root = 40 + ((pcs[0] - 40) % 12 + 12) % 12; pitches = [root, root + 7, root + 12]; }
-          else pitches = pcs.map(pc => 54 + ((pc - 54) % 12 + 12) % 12).sort((a, c) => a - c);
-          if (E >= 5) pitches = pitches.concat(pitches[pitches.length - 1] + 12);   // fullest: add a top octave
-          return pitches;
+          if (st.power) pitches = A.voicePower(pcs[0], prev, Math.max(rg.lo, 40), Math.min(lane.hi, 66));
+          else pitches = A.voiceLead(pcs, prev, { lo: lane.lo, hi: lane.hi, open: E >= 4, center: lane.hi - 7 });
+          prev = pitches;
+          let out = pitches;
+          if (E >= 5 && !st.power && pitches[0] - 12 >= Math.max(rg.lo, 40)) out = [pitches[0] - 12].concat(pitches);   // fullest: double the bottom
+          return (voices[k] = out);
         };
         let rhythm = E <= 1 ? [[0, 16]] : st.chordRhythm;
         // two chords in the bar: every hit belongs to one half, and the second chord gets a hit on beat 3
