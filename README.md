@@ -1,0 +1,156 @@
+# MIDI Music Maker
+
+A music-making app that runs in your browser. No install needed.
+
+## Start it
+Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge works best.
+
+## New in v2.3: less repetition (from the "Keeping songs fresh" research)
+- **Longer ideas, heard less often.** Melodies now grow from a 2-bar idea (6–10 notes) in 8-bar phrases instead of a
+  1-bar motif restated at the start of every 4 bars. About half of each phrase is new material (contrast,
+  continuation), and the hook sits at the top of the chorus and once more halfway. The status bar shows how much of
+  the sung melody states one of the ideas (about 40% in Pop songs, down from about 58%). New bars show as green
+  *Second idea* / *New cell* marks in the strip above the notes.
+- **Every section has its own material.** The verse has its own idea, and its second 8 bars a new idea that keeps only
+  the rhythm. The pre-chorus climbs on its own cell, the solo plays the hook's rhythm on new notes, and a returning
+  verse keeps its first half and gets a new second half.
+- **The scorer no longer rewards repetition.** It aims for about half the bars sharing a rhythm, penalises one bar
+  shape filling the melody, and likes one clear peak note. The song's score is the mean of its sections' scores.
+- **Chords per section.** Each section gets a varied plan instead of one 4-chord loop: middle groups swap a chord for
+  one with the same job, pre-choruses speed up to two chords a bar and land on V, choruses can start on the home chord
+  and have turnarounds, slow verses hold each chord for 2 bars, and now and then a colour chord appears (borrowed iv,
+  ♭VII or ♭VI, a secondary dominant on the half bar before its target, a Lydian II in a bridge). The chord lane shows
+  both chords of a split bar.
+- **Key changes** (generator bar): *Auto*, *None*, *Last chorus up a step* or *Choruses up a minor third* (the bar
+  before each chorus plays the new key's V and the next verse starts back home). Key changes only happen at section
+  borders, as in real songs. The chord lane shows chord names in the key each bar sounds in.
+- **New chorus returns**: *same tune, new chords* (reharmonised), *melody rests for 4 bars* and, with a lead
+  instrument in the band, *lead takes the tune for 4 bars*. Every return also gets small velocity changes so no two
+  passes are identical.
+- **More cadences**: more phrase-ending rhythms (some from the style's own rhythm cells) and the occasional
+  appoggiatura, a note above the goal that lands on the beat and resolves down.
+- **🎚 EQ** (top bar, next to Reverb): a 5-band equalizer on the whole mix (Bass 80 Hz, Low mids 250 Hz, Mids 1 kHz,
+  Presence 3.5 kHz, Air 10 kHz, ±12 dB) with a live response curve, presets (Bass boost, Warm, Bright, Melody
+  forward, Loudness, Lo-fi radio, Small speakers, Clear the mud) and an on/off switch to compare. It changes the sound
+  while it plays, is remembered in the browser and saved with projects. It shapes the sampled and synth sounds;
+  MIDI devices and exported .mid files are not changed. Double-click a slider to reset that band.
+
+## What it does
+- **Generator**: pick a style (Pop, Lo-fi, Rock, Electronic, Ambient), key, scale and melody form, then click
+  *Generate new song* to get drums, bass, chords and melody. The 🎲 button on a track regenerates just that part.
+- **Phrase → melody**: type a phrase (e.g. "Where did you go last night?") and click *Build melody from phrase*.
+  The phrase becomes the melody's core motif: stressed syllables land on the beats, the speech contour is snapped to
+  the scale, questions end high and statements fall to the home note. The verse states the phrase, and the rest of the
+  melody is developed from it (varied repeats, fragments, the chorus as a variation). A strip above the notes shows
+  which bars hold the motif and how each one was varied, and the syllables show on the notes (and are saved as lyrics
+  in the .mid file). Tick *+ looping hook track* to also get the phrase as a separate looping riff. With a phrase
+  typed in, *Generate new song* builds the whole song's melody from it too.
+- **Melody engine**: melodies grow from a 2–4 note motif using classic forms (sentence, period / question–answer,
+  call & response) and variations (sequence, changed ending, rhythm shift, augmentation, passing notes, inversion…).
+  Songs are built as verse A A′ and chorus B B′. 24 candidates are generated and the best is kept, scored on what
+  listeners expect: mostly steps, leaps that turn back, arch-shaped phrases, about an octave of range, chord tones on
+  strong beats and ending on the home note. The status bar shows the winner's score.
+- **Answer this / Re-pitch to chords** (editor bar): build a vocal line from the selected track. *Answer* plays in its
+  rests and held notes in another register (call and response). *Re-pitch* keeps its rhythm and moves the notes onto
+  each bar's chord.
+- **Full song form** (Length: *Full song*): the generator plans the whole song as sections, with a layout and bar
+  counts per style: Pop verse–pre-chorus–chorus–bridge (96 bars), Rock AABA with a solo, Lo-fi AABA, Electronic
+  intro–break–build–drop (112 bars), Ambient A B A. Each section gets its own chords (the bridge avoids the home chord
+  and ends on V, the outro ends home) and an energy level: thin verses, full choruses, beat-only EDM intros, breaks
+  without kick, builds with a snare roll that speeds up from quarters to eighths to sixteenths. Each section's melody
+  is written once; verses return with the same music and every chorus return is an exact copy with exactly one change
+  (new ending, passing notes, octave doubling, a drop-out breakdown, or a final key change up a whole step). A typed
+  phrase goes where the title belongs (the chorus / A sections / drop) and the verses use a variation of it. The
+  sections show as coloured blocks in the ruler (bars ▮ = energy) and as markers in the exported .mid file.
+  *Loop (8 bars)* keeps the old short-loop generator.
+- **Sections bar** (under the phrase bar): every section of the song as a card. Rename it, change its type
+  (verse, chorus, bridge…), set its length in bars, click the ▮ bars to change its energy, move it earlier or later,
+  duplicate it as an exact repeat, write new music for it (↻) or delete it. *+ Add section* inserts a new one;
+  if the song already has that type, it repeats it. **Octave − / +** moves a section an octave, for all instruments
+  or only the selected track; the move is kept when you regenerate that part. Songs without sections get a
+  *Split into sections* button.
+- **🥁 Drum sounds** (generator bar): untick any drum or percussion sound and the generator stops using it
+  (Generate, 🎲 on a drum track, ↻ on a section). Unticking also removes it from the song's drum tracks
+  (Ctrl+Z undoes it). Click a name to hear it. *Keep only the sounds in this song* and *Turn all on* are shortcuts,
+  and *New beat with these sounds* rewrites the drums. The choice is saved with the project and carries over to new songs.
+- **Style** (generator bar): 30 genres in groups. Pop & rock: Pop, Indie, Rock, Punk, Metal. Blues, jazz & soul:
+  Blues, Jazz, Funk, Disco, R&B / Soul, Gospel. Hip-hop: Hip-hop, Trap, Lo-fi. Electronic: Electronic (EDM), House,
+  Techno, Drum and bass, Dubstep, Synthwave, Ambient. World & Latin: Reggae, Reggaeton, Latin (salsa), Bossa nova,
+  Afrobeats. Country & folk: Country, Folk. Orchestral: Classical, Cinematic. Each sets its own tempo, swing, drum
+  groove, chord and bass rhythm, melody rhythm, song layout and favourite chord progressions.
+- **Game music** (Style group): Chiptune platformer, RPG town, Overworld adventure, Dungeon / cave, Boss battle,
+  Fantasy tavern, Horror ambience, Sci-fi space, Puzzle / casual, Racing, Menu / title theme, plus two short stingers,
+  Victory fanfare and Game over. Each has its own instrument pack. The background styles use the *Seamless game loop*
+  structure (A B A B, no intro or outro, no final key change or big last chorus, and the last bar's fill leads back
+  into bar 1), and Generate turns the Loop button on so it plays round and round. *Long game loop* (A B A C) and
+  *Short stinger* are in the Structure list too and work with any style.
+- **BPM, Bars and Swing** (top bar): each has a small *auto* / *🔒 kept* switch. On *auto*, Generate uses the style's
+  tempo and swing and the structure's length. As soon as you change one yourself it switches to *kept*, and Generate
+  keeps your value: a kept bar count builds the full song to exactly that many bars, with the sections scaled to fit.
+  Click the switch to go back to *auto*. In Loop mode the *Loop bars* box sets the length (editing Bars copies into it).
+- **Loop bars** (generator bar, next to Length): shown only when Length is *Loop*. Type any length from 1 to 256
+  bars (the list suggests 4, 8, 16, 24, 32, 64); every part is written to repeat seamlessly over exactly that many bars.
+- **Instrument pack** (generator bar): which General MIDI instrument plays each part (chords, bass, melody, hook,
+  harmony, counter-melody, pad, arpeggio, lead). *Style's own band* follows the style; every genre also has its pack,
+  plus theme packs (symphony orchestra, 8-bit chiptune, acoustic unplugged, big band, 80s synth pop, church choir
+  and organ, piano trio, world instruments, music box lullaby, dreamy pads). Changing it re-voices the current
+  song straight away (Ctrl+Z undoes it) and is used by Generate.
+- **Structure** (generator bar): pick the song's layout. *Style default* uses each style's own form; the templates
+  are verse–chorus, verse–pre–chorus–bridge (pop), chorus first, AABA 32-bar, AABA with a solo, 12-bar blues
+  (with blues changes), EDM build and drop, hip-hop verse and hook, ternary (A B A), rondo (A B A C A) and strophic.
+  Picking one switches Length to *Full song*; it is used on the next Generate.
+- **Instruments** (generator bar, 2–9): how many instruments the song uses, drums included. Past the core band
+  (melody, chords, drums, bass) each extra gets a job and a place in the form: **harmony** a third or sixth under the
+  melody in the choruses, a **counter-melody** that answers the melody in the verses and bridge, a **pad** under the
+  intro, bridge, breaks and big choruses, an **arpeggio** driving the pre-choruses, builds and choruses, and a **lead**
+  that plays the tune in the intro and in an added instrumental **interlude**, then doubles the last chorus an octave up.
+  So the arrangement grows and thins out across the song. 🎲 on the melody rewrites the parts that follow it.
+- **Chords** (generator bar): pick a progression type: pop I–V–vi–IV, sensitive vi–IV–I–V, 50s doo-wop, rock
+  I–IV–V–IV, royal road, Pachelbel's canon, circle vi–ii–V–I, jazz ii–V–I, 12-bar blues, two-chord vamp, minor
+  i–iv–v–i, Andalusian, epic i–VI–III–VII or aeolian. Changing it rewrites the chords and the melody across the song
+  (pre-choruses, builds and bridges keep their own for contrast). Each **section card** has its own progression menu too.
+- **Chord lane** (under the section names, above the notes): every bar's chord, as a name and a numeral. Click a
+  bar to pick a different chord (hover to hear it). Bass, chords, pad, arpeggio and harmony follow it straight away,
+  and melody notes on the beat move onto the new chord. Changed bars show in purple; *Back to the progression* undoes one.
+- **Melody leaps** slider: how far the melody may jump between notes. Far left moves only up and down the scale;
+  far right allows leaps up to an octave. Letting go rebuilds the melody (Ctrl+Z undoes it).
+- **Projects** (📁 Projects, 💾 Save or Ctrl+S): saves the project inside the browser exactly as it is: all tracks,
+  sections, generator settings, view and undo history. Every save also keeps a version (the last 20), so you can
+  reopen an earlier state. *Download project file* writes the whole state to a `.mmm.json` file for backups or
+  another PC; *Open file…* loads it back. Reopening the page brings back your last session where you left it.
+- **Piano roll** for instruments and a **step sequencer** for drums.
+- **All 128 General MIDI instruments** plus the GM drum kit.
+- **Three sound sources** (Sound menu):
+  - *Sampled GM instruments*: real recorded instrument samples, downloaded on first use (needs internet).
+  - *Built-in synth*: works fully offline.
+  - *Connect MIDI devices*: plays through a MIDI device. On Windows this includes
+    **Microsoft GS Wavetable Synth**, the built-in General MIDI sound set, which also works offline.
+    MIDI keyboards plugged into the PC can play and record too.
+- **Export .mid** gives you a standard MIDI file for any DAW (FL Studio, Ableton, Reaper, MuseScore…).
+- **Open file…** imports `.mid` files, project files (`.mmm.json`) and older `.json` projects. Your work also autosaves in the browser.
+
+## Controls
+| Action | How |
+|---|---|
+| Play / stop | Space |
+| Add note | Click (drag right to make it longer) |
+| Move / resize | Drag a note / drag its right edge |
+| Delete | Right-click, double-click, or select + Delete |
+| Select several | Shift+drag, Ctrl+A, Ctrl+click |
+| Copy / paste / duplicate | Ctrl+C / Ctrl+V (pastes at the playhead) / Ctrl+D |
+| Transpose selection | Up/Down arrows (Shift = octave), Left/Right moves |
+| Undo / redo | Ctrl+Z / Ctrl+Y |
+| Play notes from the keyboard | Z S X D C V… (lower octave), Q 2 W 3 E… (upper), [ and ] change octave |
+| Record | Press ● then Play, and play notes on your keyboard or a MIDI keyboard |
+| Zoom / scroll | Ctrl+wheel / wheel, Shift+wheel |
+| Set start position | Click the bar ruler |
+
+## Files
+- `index.html`: the page
+- `js/app.js`: UI, piano roll, sequencer
+- `js/audio.js`: sound engines (samples, synth, MIDI out)
+- `js/generator.js`: song generator (chords, bass, drums, arrangement)
+- `js/songform.js`: song form (section plans, per-section chords and energy, exact returns with one change)
+- `js/melody.js`: melody engine (phrase → riff, motif development, candidate scoring, answer / re-pitch)
+- `js/midifile.js`: .mid export/import
+- `js/gm.js`: General MIDI instrument and drum tables

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>MIDI Music Maker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/style.css?v=20261125k">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">🎹 <span>MIDI Music Maker</span> <span id="appVersion" class="hint" title="If this does not say v2.3, press Ctrl+F5 to load the newest files">v2.3</span></div>
+
+  <div class="group transport">
+    <button id="btnPlay" class="big" title="Play / Stop (Space)">▶</button>
+    <button id="btnStop" title="Stop and go back to the start">■</button>
+    <button id="btnRec" class="toggle" title="Record from your computer keyboard or MIDI keyboard while playing">●</button>
+    <button id="btnLoop" class="toggle on" title="Loop the song">⟲</button>
+    <div id="position" class="lcd">1.1.1</div>
+  </div>
+
+  <div class="group">
+    <label>BPM <input id="inBpm" type="number" min="30" max="300" value="120"></label><button class="keep" data-keep="bpm" title="">auto</button>
+    <label>Bars <input id="inBars" type="number" min="1" max="256" value="8"></label><button class="keep" data-keep="bars" title="">auto</button>
+    <label title="Delays every second 16th note for a shuffled feel">Swing <input id="inSwing" type="range" min="0" max="0.5" step="0.01" value="0"></label><button class="keep" data-keep="swing" title="">auto</button>
+  </div>
+
+  <div class="group">
+    <label>Sound
+      <select id="selEngine">
+        <option value="sampled">Sampled GM instruments (online)</option>
+        <option value="synth">Built-in synth (offline)</option>
+        <option value="midi-connect">Connect MIDI devices…</option>
+      </select>
+    </label>
+    <label title="Reverb">Reverb <input id="inReverb" type="range" min="0" max="0.6" step="0.01" value="0.18"></label>
+    <button id="btnEq" class="toggle" title="Equalizer: shape the sound of the whole mix while it plays">🎚 EQ</button>
+  </div>
+
+  <div class="group file">
+    <button id="btnNew" title="Start an empty song">New</button>
+    <button id="btnProjects" title="Your saved projects: open, rename, go back to an earlier version, download">📁 Projects</button>
+    <button id="btnOpen" title="Open a project file (.json) or a MIDI file (.mid)">Open file…</button>
+    <button id="btnSave" title="Save the project exactly as it is now (Ctrl+S): tracks, sections, generator settings, view and undo history">💾 Save</button>
+    <span id="projState" class="hint"></span>
+    <button id="btnExport" class="accent" title="Download a standard MIDI file">Export .mid</button>
+    <input id="fileInput" type="file" accept=".json,.mid,.midi" hidden>
+  </div>
+</header>
+
+<section id="genbar">
+  <span class="gen-title">✨ Generator</span>
+  <label title="The genre: sets tempo, swing, drum groove, chord and bass rhythm, song layout and favourite chord progressions">Style <select id="selStyle"></select></label>
+  <label title="Instrument theme pack: which General MIDI instrument plays each part. Style's own band follows the style. Changing it re-voices the current song right away.">Instrument pack <select id="selPack"></select></label>
+  <label>Key <select id="selKey"></select></label>
+  <label>Scale <select id="selScale"></select></label>
+  <label title="How the melody grows from its motif">Melody form
+    <select id="selForm">
+      <option value="auto">Auto</option>
+      <option value="sentence" title="motif, varied repeat, fragments, cadence">Sentence</option>
+      <option value="period" title="phrase ends open, then the same start closes on the home note">Period (question / answer)</option>
+      <option value="call">Call &amp; response</option>
+    </select>
+  </label>
+  <label title="Full song plans intro, verses, choruses, bridge and outro for the style">Length
+    <select id="selLength">
+      <option value="loop">Loop</option>
+      <option value="full" selected>Full song</option>
+    </select>
+  </label>
+  <label id="loopBarsLabel">Loop bars <input id="inLoopBars" type="number" min="1" max="256" value="8" list="loopBarsList" style="width:70px"></label>
+  <datalist id="loopBarsList"><option value="4"><option value="8"><option value="16"><option value="24"><option value="32"><option value="64"></datalist>
+  <label title="How many instruments the generated song uses (drums count as one). 2: melody and chords. 3: + drums. 4: + bass. 5: + harmony under the melody in choruses. 6: + counter-melody in the verses and bridge. 7: + pad under intros, bridges and big choruses. 8: + arpeggio in pre-choruses, builds and choruses. 9: + a lead that plays the tune in the intro and an added interlude, and doubles the last chorus.">Instruments
+    <input id="inInstruments" type="number" min="2" max="9" value="4" style="width:48px">
+  </label>
+  <label title="The chord progression type. Changing it rewrites the chords (and the melody to fit) across the song right away; it is also used by Generate. Pre-choruses, builds and bridges keep their own chords for contrast.">Chords
+    <select id="selProg"></select>
+  </label>
+  <label title="Key changes, from the research: real songs change key at section borders, not inside bars. Last chorus up a step is the classic lift; choruses up a minor third are common in J-pop and anime (the pre-chorus ends on the new key's V and the next verse starts back home). Auto picks by style.">Key changes
+    <select id="selKeyPlan">
+      <option value="auto">Auto (by style)</option>
+      <option value="none">None</option>
+      <option value="lift">Last chorus up a step</option>
+      <option value="chorus3">Choruses up a minor third</option>
+    </select>
+  </label>
+  <label title="The order and length of the song's sections. Picking one switches Length to Full song.">Structure
+    <select id="selStructure"></select>
+  </label>
+  <label id="leapLabel" title="How far the melody may jump between notes. Left: it only moves up and down the scale, like most sung melodies. Right: bigger, more adventurous leaps.">Melody leaps
+    <input id="inLeap" type="range" min="0" max="100" step="5" value="35"><span id="leapVal" class="leapval">up to a 4th</span>
+  </label>
+  <button id="btnDrumSounds" title="Switch off drum and percussion sounds you don't want the generator to use">🥁 Drum sounds</button>
+  <button id="btnGenerate" class="accent">Generate new song</button>
+  <span class="spacer"></span>
+  <label>Song name <input id="inName" type="text" value="Untitled"></label>
+</section>
+<section id="phrasebar">
+  <span class="gen-title">🗣 Phrase → riff</span>
+  <input id="inPhrase" type="text" placeholder="Type a phrase, e.g.  Where did you go last night?" spellcheck="false">
+  <button id="btnPhrase" class="accent" title="Rebuild the melody from the phrase: its stress rhythm and speech contour become the motif that the verse and chorus are developed from">Build melody from phrase</button>
+  <label title="Also add a separate track that loops the phrase as a riff"><input id="chkHook" type="checkbox"> + looping hook track</label>
+  <span id="phraseInfo" class="hint">Stressed syllables land on the beat, a “?” ends high, a statement falls home. The phrase becomes the melody's motif; the strip above the notes shows where it appears.</span>
+</section>
+
+<section id="sectionbar">
+  <span class="gen-title">🧩 Sections</span>
+  <div id="secList"></div>
+  <div class="sec-tools">
+    <label title="What the Oct − / + buttons on a section move">Octave buttons move
+      <select id="selSecScope">
+        <option value="all">all instruments</option>
+        <option value="track">the selected track</option>
+      </select>
+    </label>
+    <select id="selAddSec" title="Type of section to add"></select>
+    <button id="btnAddSec" title="Add a section after the selected one. If the song already has one of that type, the new one repeats it.">+ Add section</button>
+  </div>
+</section>
+
+<main>
+  <aside id="trackPanel">
+    <div id="trackList"></div>
+    <div class="add-buttons">
+      <button id="btnAddTrack">+ Instrument</button>
+      <button id="btnAddDrums">+ Drums</button>
+    </div>
+  </aside>
+
+  <section id="editor">
+    <div id="editorBar">
+      <strong id="edTitle">Track</strong>
+      <label>Snap
+        <select id="selSnap">
+          <option value="1">1/16</option>
+          <option value="2">1/8</option>
+          <option value="4" selected>1/4</option>
+          <option value="16">Bar</option>
+        </select>
+      </label>
+      <label>Note length
+        <select id="selLen">
+          <option value="1">1/16</option>
+          <option value="2">1/8</option>
+          <option value="4" selected>1/4</option>
+          <option value="8">1/2</option>
+          <option value="16">1 bar</option>
+        </select>
+      </label>
+      <label>Velocity <input id="inVel" type="range" min="1" max="127" value="100"><span id="velVal">100</span></label>
+      <span class="spacer"></span>
+      <button id="btnEdDrumSounds" class="accent" title="Choose which drum and percussion sounds the generator may use" style="display:none">🥁 Drum sounds</button>
+      <button id="btnAnswer" title="New track that answers this one in its rests and held notes (call and response)">↩ Answer this</button>
+      <button id="btnRepitch" title="New track with this track's rhythm, re-pitched to the chords in a singing range">🎯 Re-pitch to chords</button>
+      <span id="octaveInfo" class="lcd small" title="Computer keyboard octave: [ and ] to change">Oct 3</span>
+      <button id="btnZoomOut" title="Zoom out (Ctrl+wheel)">−</button>
+      <button id="btnZoomIn" title="Zoom in (Ctrl+wheel)">+</button>
+      <button id="btnClear" title="Remove all notes from this track">Clear track</button>
+    </div>
+    <div id="rollWrap"><canvas id="roll"></canvas><div id="chordMenu"></div></div>
+  </section>
+</main>
+
+<dialog id="drumDialog">
+  <div class="dlg-head">
+    <strong>🥁 Drum sounds</strong>
+    <span class="spacer"></span>
+    <button id="btnDrumClose" title="Close">✕</button>
+  </div>
+  <p class="hint">Untick a sound and the generator stops using it: Generate new song, 🎲 on a drum track and ↻ on a section all leave it out. Unticking also takes it out of this song's drum tracks (Ctrl+Z undoes that). Click a name to hear it. The choice is saved with the project and carries over to new songs.</p>
+  <div class="dlg-actions">
+    <button id="btnDrumAllOn">Turn all on</button>
+    <button id="btnDrumOnlyUsed" title="Switch off every sound that isn't in this song right now">Keep only the sounds in this song</button>
+    <button id="btnDrumRebeat" class="accent" title="Write a new beat for every drum track with the sounds that are on">🎲 New beat with these sounds</button>
+  </div>
+  <div id="drumList"></div>
+</dialog>
+
+<dialog id="eqDialog">
+  <div class="dlg-head">
+    <strong>🎚 Equalizer</strong>
+    <label class="eq-on" title="Switch the equalizer off to compare"><input type="checkbox" id="chkEqOn" checked> On</label>
+    <span class="spacer"></span>
+    <button id="btnEqClose" title="Close">✕</button>
+  </div>
+  <p class="hint">Shapes the sound of the whole mix as it plays, live. It applies to the sampled and built-in synth sounds; MIDI devices and the exported .mid file are not changed. Saved with the project.</p>
+  <div class="dlg-actions">
+    <label>Preset <select id="selEqPreset"></select></label>
+    <button id="btnEqReset">Flat</button>
+  </div>
+  <canvas id="eqCurve" height="110"></canvas>
+  <div id="eqBands"></div>
+</dialog>
+
+<dialog id="projDialog">
+  <div class="dlg-head">
+    <strong>📁 Projects</strong>
+    <span class="spacer"></span>
+    <button id="btnDlgClose" title="Close">✕</button>
+  </div>
+  <p class="hint">Projects are saved inside this browser on this PC. A save keeps everything exactly as it is: every track and note, the sections, the generator settings (style, key, phrase, melody leaps), the view and the undo history. Each save also keeps a version, so you can go back to an earlier state.</p>
+  <div class="dlg-actions">
+    <button id="btnDlgSave" class="accent">💾 Save current project</button>
+    <button id="btnDlgSaveAs">Save as a new copy…</button>
+    <button id="btnDlgDownload" title="A single file with the whole project state, to back up or move to another PC">⬇ Download project file</button>
+    <button id="btnDlgOpenFile">Open project file…</button>
+  </div>
+  <div id="projList"></div>
+</dialog>
+
+<footer>
+  <span id="status">Ready.</span>
+  <span class="spacer"></span>
+  <span class="keys">Click = add note · drag = move · drag edge = resize · right-click / double-click = delete · Shift+drag = select · Space = play · keys Z–M / Q–U = play notes</span>
+</footer>
+
+<script src="js/gm.js?v=20261125k"></script>
+<script src="js/midifile.js?v=20261125k"></script>
+<script src="js/melody.js?v=20261125k"></script>
+<script src="js/songform.js?v=20261125k"></script>
+<script src="js/generator.js?v=20261125k"></script>
+<script src="js/audio.js?v=20261125k"></script>
+<script src="js/app.js?v=20261125k"></script>
+</body>
+</html>
