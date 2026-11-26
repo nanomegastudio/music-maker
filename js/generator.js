@@ -5,6 +5,7 @@
   const Melody = NODE ? require('./melody.js') : root.Melody;
   const SongForm = NODE ? require('./songform.js') : root.SongForm;
   const Arrange = NODE ? require('./arrange.js') : root.Arrange;
+  const Perform = NODE ? require('./perform.js') : root.Perform;
 
   function rng(seed) {
     let a = seed >>> 0;
@@ -479,7 +480,11 @@
   //   II (Lydian / major two), and secondary dominants V/1..V/5 (the major chord a fifth above degree n)
   const CHROMA = {
     b7: { root: 10, q: 'M', roman: '♭VII' }, b6: { root: 8, q: 'M', roman: '♭VI' }, b3: { root: 3, q: 'M', roman: '♭III' },
-    iv: { root: 5, q: 'm', roman: 'iv' }, IV: { root: 5, q: 'M', roman: 'IV' }, V: { root: 7, q: 'M', roman: 'V' }, II: { root: 2, q: 'M', roman: 'II' }
+    iv: { root: 5, q: 'm', roman: 'iv' }, IV: { root: 5, q: 'M', roman: 'IV' }, V: { root: 7, q: 'M', roman: 'V' }, II: { root: 2, q: 'M', roman: 'II' },
+    // v2.5: a chromatic mediant (major III), the Neapolitan (major bII), the tritone substitute of V (bII7)
+    // and V with a suspended fourth (resolves to V: the 4-3 suspension at a cadence)
+    III: { root: 4, q: 'M', roman: 'III' }, N: { root: 1, q: 'M', roman: '♭II' }, sub: { root: 1, q: 'M', roman: '♭II7', dom: true },
+    Vsus: { root: 7, q: 's', roman: 'Vsus4' }
   };
   const SEC_ROMAN = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii'];
   const isColour = d => typeof d === 'string';
@@ -489,27 +494,59 @@
     const sec = /^V\/(\d)$/.exec(code);
     if (sec) { const sc = harmonyScale(scaleName); return { root: (key + sc[+sec[1] % 7] + 7) % 12, q: 'M', roman: 'V/' + SEC_ROMAN[+sec[1] % 7] }; }
     const c = CHROMA[code] || CHROMA.b7;
-    return { root: (key + c.root) % 12, q: c.q, roman: c.roman };
+    return { root: (key + c.root) % 12, q: c.q, roman: c.roman, dom: !!c.dom };
   }
 
-  // Pitch classes of a chord on a scale degree
-  function chordPCs(key, scaleName, degree, sevenths) {
+  // v2.5 (gap 8): chord qualities by style, on top of the plain stacked thirds of the scale
+  //   dom:    I, IV and V are dominant sevenths (blues: C7 F7 G7), major-triad based even in a minor or blues scale
+  //   leading: in a minor key V is major (the raised 7th leads home), as in classical, film, flamenco and game music
+  //   ext9:   jazz, soul, lo-fi, gospel and bossa colour seventh chords with a 9th (in place of the 5th)
+  //   add9:   pop, indie, synthwave and dreamy styles add a 9th to I and IV
+  const FLAVOURS = {
+    dom: ['Blues'],
+    leading: ['Classical', 'Cinematic', 'Metal', 'Latin (salsa)', 'Reggaeton', 'Boss battle', 'Dungeon / cave', 'Horror ambience', 'Overworld adventure', 'Menu / title theme', 'Game over', 'Victory fanfare', 'Fantasy tavern', 'RPG town'],
+    ext9: ['Jazz', 'R&B / Soul', 'Lo-fi', 'Gospel', 'Bossa nova'],
+    add9: ['Pop', 'Indie', 'Synthwave', 'Ambient', 'Sci-fi space', 'Puzzle / casual', 'Menu / title theme']
+  };
+  let curStyle = null;                       // the style of the song being generated (chordPCs callers may omit it)
+  const has = (f, style) => FLAVOURS[f].includes(style || curStyle);
+  // Pitch classes of a chord on a scale degree (root first, then the third: the bass relies on that order)
+  function chordPCs(key, scaleName, degree, sevenths, style) {
     degree = chordAtStep(degree, 0);
+    style = style || curStyle;
     if (isColour(degree)) {
       const c = colourInfo(key, scaleName, degree);
+      if (c.q === 's') return [c.root, (c.root + 5) % 12, (c.root + 7) % 12].concat(sevenths ? [(c.root + 10) % 12] : []);
       const pcs = [c.root, (c.root + (c.q === 'm' ? 3 : 4)) % 12, (c.root + 7) % 12];
-      // secondary dominants sound as dominant sevenths when the style uses sevenths
-      if (sevenths) pcs.push((c.root + (c.q === 'm' || /^V\//.test(degree) || c.roman === '♭VII' ? 10 : 11)) % 12);
+      // secondary dominants (and the tritone substitute) sound as dominant sevenths when the style uses sevenths
+      if (sevenths || c.dom) pcs.push((c.root + (c.q === 'm' || /^V\//.test(degree) || c.roman === '♭VII' || c.dom ? 10 : 11)) % 12);
       return pcs;
     }
     degree = ((+degree || 0) % 7 + 7) % 7;
     const sc = harmonyScale(scaleName);
+    const minor = sc[2] === 3;
+    // blues: dominant sevenths on I, IV, V
+    if (has('dom', style) && [0, 3, 4].includes(degree)) {
+      const root = (key + [0, 5, 7][[0, 3, 4].indexOf(degree)]) % 12;
+      return [root, (root + 4) % 12, (root + 7) % 12].concat(sevenths ? [(root + 10) % 12] : []);
+    }
+    // minor key: major V (with the leading tone)
+    if (minor && degree === 4 && has('leading', style)) {
+      const root = (key + 7) % 12;
+      return [root, (root + 4) % 12, (root + 7) % 12].concat(sevenths ? [(root + 10) % 12] : []);
+    }
     const n = sevenths ? 4 : 3;
     const pcs = [];
     for (let i = 0; i < n; i++) {
       const idx = degree + i * 2;
       pcs.push((key + sc[idx % 7] + 12 * Math.floor(idx / 7)) % 12);
     }
+    // a major 9th (two semitones over the root, from the scale) replaces the 5th in jazzy styles, or joins I and IV in pop
+    const ninth = (key + sc[(degree + 1) % 7]) % 12;
+    const isMaj9 = ((ninth - pcs[0]) % 12 + 12) % 12 === 2;
+    const dim = ((pcs[2] - pcs[0]) % 12 + 12) % 12 === 6;
+    if (isMaj9 && !dim && sevenths && has('ext9', style)) pcs[2] = ninth;
+    else if (isMaj9 && !dim && !sevenths && has('add9', style) && (degree === 0 || degree === 3)) pcs.push(ninth);
     return pcs;
   }
 
@@ -542,21 +579,22 @@
   };
   const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
   // chord name for a degree in a key/scale, e.g. { roman: 'vi', name: 'Am' }
-  function chordName(key, scaleName, degree) {
+  function chordName(key, scaleName, degree, style) {
     if (Array.isArray(degree)) {
-      const parts = degree.map(d => chordName(key, scaleName, d));
+      const parts = degree.map(d => chordName(key, scaleName, d, style));
       return { roman: parts.map(c => c.roman).join(' '), name: parts.map(c => c.name).join(' ') };
     }
     if (isColour(degree)) {
       const c = colourInfo(key, scaleName, degree);
-      return { roman: c.roman, name: GM.NOTE_NAMES[c.root] + (c.q === 'm' ? 'm' : '') };
+      return { roman: c.roman, name: GM.NOTE_NAMES[c.root] + (c.q === 'm' ? 'm' : c.q === 's' ? 'sus4' : c.dom ? '7' : '') };
     }
     degree = ((+degree || 0) % 7 + 7) % 7;
-    const pcs = chordPCs(key, scaleName, degree, false);
+    const pcs = chordPCs(key, scaleName, degree, false, style);
     const third = (pcs[1] - pcs[0] + 12) % 12, fifth = (pcs[2] - pcs[0] + 12) % 12;
     const dim = third === 3 && fifth === 6, minor = third === 3;
-    const roman = (minor ? ROMAN[degree].toLowerCase() : ROMAN[degree]) + (dim ? '°' : '');
-    return { roman, name: GM.NOTE_NAMES[pcs[0]] + (dim ? 'dim' : minor ? 'm' : '') };
+    const dom = has('dom', style || curStyle) && [0, 3, 4].includes(degree) && (STYLES[style || curStyle] || {}).sevenths;
+    const roman = (minor ? ROMAN[degree].toLowerCase() : ROMAN[degree]) + (dim ? '°' : '') + (dom ? '7' : '');
+    return { roman, name: GM.NOTE_NAMES[pcs[0]] + (dim ? 'dim' : minor ? 'm' : '') + (dom ? '7' : '') };
   }
 
   // a bar's chord: a per-bar change wins, then the section's progression, then the song's
@@ -676,7 +714,8 @@
 
   // ---- melody (see melody.js) ----------------------------------------------
   function harmony(gen) {
-    return { key: gen.key, scale: gen.scale, leap: typeof gen.leap === 'number' ? gen.leap : 0.35, chordAt: (bar, s = 0) => chordPCs(gen.key, gen.scale, chordAtStep(chordForBar(gen, bar), s), false) };
+    curStyle = gen.style;
+    return { key: gen.key, scale: gen.scale, leap: typeof gen.leap === 'number' ? gen.leap : 0.35, arp: typeof gen.arp === 'number' ? gen.arp : 0.15, chordAt: (bar, s = 0) => chordPCs(gen.key, gen.scale, chordAtStep(chordForBar(gen, bar), s), false) };
   }
   // the key a bar sounds in (sections can move to another key; the final chorus can lift)
   const keyAt = (gen, bar) => ((gen.key + (gen.sections ? SongForm.keyShiftAt(gen, bar) : 0)) % 12 + 12) % 12;
@@ -749,29 +788,52 @@
   const secOf = (gen, bar) => gen.sections ? SongForm.sectionAt(gen.sections, bar) : null;
   const topLine = notes => { const by = new Map(); for (const n of notes) if (!by.has(n.s) || by.get(n.s).p < n.p) by.set(n.s, n); return [...by.values()].sort((a, b) => a.s - b.s); };
 
+  const ARP_PATTERNS = [[0, 1, 2, 3, 2, 1, 0, 1], [0, 1, 2, 3], [3, 2, 1, 0], [0, 2, 1, 3], [0, 2, 1, 2], [0, 3, 1, 3, 2, 3, 1, 3], [0, 1, 2, 1, 3, 2, 1, 2]];
   function genExtra(role, gen, bars, r, ctx = {}) {
+    const arpPats = {};
     const st = styleOf(gen), h = harmony(gen), M = Melody._;
     const on = extraActive(role, gen, bars);
-    const mel = topLine((ctx.melody || []).filter(n => n.s < bars * 16));
+    // the melody in home-key pitches: these parts are written in the home key and moved by the key plan afterwards
+    // (v2.5 fix: in a chorus that changes key they used to be moved twice)
+    const unshift = n => gen.sections ? Object.assign({}, n, { p: n.p - SongForm.keyShiftAt(gen, Math.floor(n.s / 16)) }) : n;
+    const mel = topLine((ctx.melody || []).filter(n => n.s < bars * 16).map(unshift));
     const notes = [];
     const energyAt = b => { const s = secOf(gen, b); return s ? s.energy : 3; };
     const program = progOf(role, gen, ctx);
     const prof = Arrange.melodyProfile(melodyHome(gen, ctx), bars, gen.sections, null);
     if (role === 'harmony') {
-      // a chord tone a third (or sixth) below each melody note, else the diatonic third below
+      // v2.5 (gap 12): a second voice with counterpoint: mostly a third or sixth under the melody (a chord tone),
+      // but it holds its note while the melody moves quickly and the held note still sounds well (oblique motion),
+      // never moves in parallel fifths or octaves, and goes against the melody's direction into long cadence notes
       const pool = M.makePool(h, 36, 96);
+      const iv = (a, b) => ((a - b) % 12 + 12) % 12;
+      const sweet = d => [3, 4, 8, 9].includes(d);
+      let last = null, lastMel = null;
       for (const n of mel) {
         const b = Math.floor(n.s / 16);
-        if (!on[b]) continue;
+        if (!on[b]) { last = null; lastMel = null; continue; }
         const pcs = h.chordAt(b, n.s % 16);
-        let p = null;
-        for (const d of [3, 4, 8, 9]) if (pcs.includes(((n.p - d) % 12 + 12) % 12)) { p = n.p - d; break; }
-        if (p == null) { const i = M.nearestIdx(pool, n.p); p = pool[Math.max(0, i - 2)]; }
-        notes.push({ p, s: n.s, l: n.l, v: Math.max(30, Math.round(n.v * 0.78)) });
+        // oblique: keep the last note under a quick melody note if it is still a third or sixth below it
+        if (last && lastMel && n.l <= 2 && last.s + last.l >= n.s - 1 && last.p < n.p && sweet(iv(n.p, last.p)) && r.chance(0.7)) {
+          last.l = n.s + n.l - last.s; lastMel = n; continue;
+        }
+        const opts = [];
+        for (const d of [3, 4, 8, 9]) { const p = n.p - d; if (pcs.includes(((p % 12) + 12) % 12)) opts.push(p); }
+        if (!opts.length) { const i = M.nearestIdx(pool, n.p); opts.push(pool[Math.max(0, i - 2)]); }
+        let p = opts[0];
+        if (last && lastMel) {
+          const mDir = Math.sign(n.p - lastMel.p);
+          const score = q => Math.abs(q - last.p) + (n.l >= 8 && mDir && Math.sign(q - last.p) === mDir ? 4 : 0) - (n.l >= 8 && mDir && Math.sign(q - last.p) === -mDir ? 2 : 0)
+            + (Arrange.parallelPerfect(last.p, lastMel.p, q, n.p) ? 20 : 0);
+          p = opts.reduce((a, q) => score(q) < score(a) ? q : a, opts[0]);
+        }
+        last = { p, s: n.s, l: n.l, v: Math.max(30, Math.round(n.v * 0.78)) };
+        notes.push(last); lastMel = n;
       }
     } else if (role === 'counter') {
       const src = mel.filter(n => on[Math.floor(n.s / 16)]);
       const ans = Melody.answer(src.length ? src : mel, h, st, bars, r);
+      Melody.treatNonChordTones(ans, h);
       ans.forEach(n => { if (on[Math.floor(n.s / 16)]) notes.push(Object.assign(n, { v: Math.round(n.v * 0.85) })); });
     } else if (role === 'pad') {
       // v2.4: open, voice-led chords under the melody (no longer in the middle of its octave)
@@ -797,7 +859,10 @@
         if (prof.sung[b] && base + 14 > Math.min(rg.hi, 93)) base = Math.max(rg.lo, prof.low[b] - 14);   // no room up there (or too shrill): under the melody
         base = Math.max(base, rg.lo);
         const shapeAt = s => { const tones = h.chordAt(b, s).map(pc => base + ((pc - base) % 12 + 12) % 12).sort((a, c) => a - c); return tones.concat([tones[0] + 12]); };
-        const pat = [0, 1, 2, 3, 2, 1, 0, 1];
+        // v2.5 (gap 11): each section type gets its own arpeggio figure (up, down, up-down, broken, Alberti...)
+        const sec = secOf(gen, b), key = sec ? sec.type : 'loop';
+        if (!arpPats[key]) arpPats[key] = r.pick(ARP_PATTERNS);
+        const pat = arpPats[key];
         const step = E >= 4 || st.edm || st.arp16 ? 1 : 2;
         let k = 0;
         for (let s = 0; s < 16; s += step) { const shape = shapeAt(s); notes.push({ p: shape[pat[k++ % pat.length] % shape.length], s: b * 16 + s, l: step, v: humanVel(r, (s % 4 === 0 ? 78 : 64) + (E - 3) * 4, 5) }); }
@@ -838,13 +903,14 @@
   const ROLE_NAMES = { drums: 'Drums', bass: 'Bass', chords: 'Chords', melody: 'Melody', riff: 'Hook' };
 
   // Build a complete song description (tracks + generation settings)
-  function generateSong({ key = 0, scale = 'Major', style = 'Pop', bars = 8, seed = Date.now(), phrase = '', form = 'auto', hookTrack = false, full = false, leap = 0.35, drumOff = [], structure = 'style', instruments = 4, progression = 'auto', pack = 'auto', loopBars = 0, fitBars = 0, keyPlan = 'auto' }) {
+  function generateSong({ key = 0, scale = 'Major', style = 'Pop', bars = 8, seed = Date.now(), phrase = '', form = 'auto', hookTrack = false, full = false, leap = 0.35, drumOff = [], structure = 'style', instruments = 4, progression = 'auto', pack = 'auto', loopBars = 0, fitBars = 0, keyPlan = 'auto', arp = 0.15, chordVar = 0.5 }) {
     const r = rng(seed);
     const st = STYLES[style] || STYLES['Pop'];
     if (!STYLES[style]) style = 'Pop';
+    curStyle = style;
     lastInfo = {};
     const base = rolesFor(instruments);
-    const gen = { key, scale, style, seed, form, leap, structure, instruments, interlude: base.includes('lead'), drumOff: drumOff.slice(), phrase: phrase.trim() || null, hookMotif: null, pack: PACKS[pack] ? pack : 'auto', progression: pickProgression(scale, r, style), progType: PROGRESSIONS[progression] ? progression : 'auto', keyPlan };
+    const gen = { key, scale, style, seed, form, leap, structure, instruments, interlude: base.includes('lead'), drumOff: drumOff.slice(), phrase: phrase.trim() || null, hookMotif: null, pack: PACKS[pack] ? pack : 'auto', progression: pickProgression(scale, r, style), progType: PROGRESSIONS[progression] ? progression : 'auto', keyPlan, arp, chordVar };
     if (PROGRESSIONS[progression]) gen.progression = PROGRESSIONS[progression].prog.slice();
     // full song: plan the sections first; their length sets the song length
     if (full) {
@@ -881,7 +947,9 @@
     }
     roles.forEach(role => tracks.push(made[role]));
     lastInfo.band = roles.filter(x => EXTRA_ROLES.includes(x)).map(x => EXTRA_INFO[x]);
-    return { bpm: st.bpm, swing: st.swing, gen, tracks, bars };
+    // v2.5: a song that ends slows down over its last bars
+    const tempo = full && !gen.loop ? Perform.ritardando(bars, { stinger: gen.stinger }) : null;
+    return { bpm: st.bpm, swing: st.swing, gen, tracks, bars, tempo };
   }
 
   const helpers = () => ({ STYLES, chordPCs, chordAtStep, isMinorish, humanVel, harmony, rng, Arrange, invRate, scalePcs });
@@ -889,7 +957,7 @@
   // full-song versions of each part (section plan, energy, exact returns)
   function generateFull(role, gen, bars, r, ctx = {}) {
     const H = helpers();
-    const actx = { melodyHome: melodyHome(gen, ctx), program: progOf(role, gen, ctx), report: (lastInfo.arrange = lastInfo.arrange || {}) };
+    const actx = { melodyHome: melodyHome(gen, ctx), program: progOf(role, gen, ctx), report: (lastInfo.arrange = lastInfo.arrange || {}), noLead: !(ctx.programs && ctx.programs.lead != null) };
     let notes;
     switch (role) {
       case 'drums': return SongForm.drums(gen, r, H);
@@ -898,7 +966,7 @@
       case 'riff': notes = SongForm.riffFilter(gen, genRiff(gen, SongForm.total(gen.sections), r)); break;
       case 'melody': {
         const res = SongForm.melody(gen, r, H);
-        lastInfo.melody = { form: res.form, score: res.score, candidates: 10, marks: res.marks, fromPhrase: !!gen.hookMotif, sections: true, motifShare: res.motifShare };
+        lastInfo.melody = { form: res.form, score: res.score, candidates: 10, marks: res.marks, fromPhrase: !!gen.hookMotif, sections: true, motifShare: res.motifShare, nct: res.nct, perf: res.perf };
         notes = res.notes;
         break;
       }
@@ -910,11 +978,42 @@
   // drum sounds the user switched off are never written
   function generatePart(role, gen, bars, r, ctx) {
     if (typeof r === 'number') r = rng(r);
+    curStyle = gen.style;
     let notes = EXTRA_ROLES.includes(role) ? genExtra(role, gen, bars, r, ctx || {}) : generatePartRaw(role, gen, bars, r, ctx || {});
     // v2.4: the melody sits in its instrument's range (moved by octaves only when much of it falls outside)
     if (role === 'melody') Arrange.fitOctaves(notes, progOf('melody', gen, ctx));
     if (EXTRA_ROLES.includes(role) && gen.sections) notes = SongForm.keyUp(gen, notes);
-    if (role === 'drums' && gen.drumOff && gen.drumOff.length) { const off = new Set(gen.drumOff); return notes.filter(n => !off.has(n.p)); }
+    // v2.5: stops before a chorus silence the pad and arpeggio for the second half of that bar too
+    if ((role === 'pad' || role === 'arp') && gen.sections) {
+      const stops = new Set(gen.sections.filter(s => s.exit === 'stop').map(s => s.start + s.len - 1));
+      if (stops.size) notes = notes.filter(n => !(stops.has(Math.floor(n.s / 16)) && n.s % 16 >= 8)).map(n => { const b = Math.floor(n.s / 16); if (stops.has(b)) n.l = Math.min(n.l, b * 16 + 8 - n.s); return n; });
+    }
+    if (role === 'drums' && gen.drumOff && gen.drumOff.length) { const off = new Set(gen.drumOff); notes = notes.filter(n => !off.has(n.p)); }
+    // v2.5 (gap 12): accompaniment notes that rub against the melody are left out or moved
+    if (['chords', 'pad', 'arp', 'counter'].includes(role) && ctx && ctx.melody && ctx.melody.length) {
+      const pcsAt = t => { const b = Math.floor(t / 16); return chordPCs(keyAt(gen, b), gen.scale, chordAtStep(chordForBar(gen, b), t % 16), styleOf(gen).sevenths, gen.style); };
+      const res = Arrange.clearClashes(notes, ctx.melody, pcsAt, role === 'chords' || role === 'pad');
+      notes = res.notes;
+      lastInfo.arrange = lastInfo.arrange || {};
+      lastInfo.arrange.clashesCleared = (lastInfo.arrange.clashesCleared || 0) + res.fixed;
+    }
+    return perform(role, gen, notes, r, ctx || {});
+  }
+
+  // v2.5 (gaps 6, 9, 11): dynamics, articulation and timing feel, by part (see perform.js)
+  function perform(role, gen, notes, r, ctx) {
+    const st = styleOf(gen), program = progOf(role, gen, ctx), secs = gen.sections || null;
+    // phrase groups of 4 bars, counted from each section's start
+    const groups = secs ? b => { const s = secs.find(x => b >= x.start && b < x.start + x.len); return s ? s.start + Math.floor((b - s.start) / 4) * 4 : b; } : null;
+    const loop = !!gen.loop;
+    if (role === 'melody' || role === 'lead' || role === 'counter' || role === 'harmony' || role === 'riff') {
+      Perform.phraseDynamics(notes, 4, role === 'melody' ? 12 : 8, groups);
+      if (role === 'melody') Perform.accentSyncopation(notes);
+      Perform.articulateLine(notes, program);
+    } else if (role === 'arp') Perform.phraseDynamics(notes, 4, 6, groups);
+    else if (role === 'chords') { Perform.pedal(notes, program, st); notes = Perform.strum(notes, program, r); }
+    if (role !== 'riff') Perform.sectionDynamics(notes, secs, { loop });
+    Perform.feel(notes, role, gen.style, st, r, program);
     return notes;
   }
 
@@ -933,8 +1032,8 @@
   }
 
   // Generation settings (incl. a chord progression) for regenerating single parts
-  function makeGen({ key = 0, scale = 'Major', style = 'Pop', seed = Date.now(), form = 'auto', phrase = null, leap = 0.35 }) {
-    return { key, scale, style, seed, form, leap, phrase, hookMotif: null, progression: pickProgression(scale, rng(seed), style) };
+  function makeGen({ key = 0, scale = 'Major', style = 'Pop', seed = Date.now(), form = 'auto', phrase = null, leap = 0.35, arp = 0.15, chordVar = 0.5 }) {
+    return { key, scale, style, seed, form, leap, arp, chordVar, phrase, hookMotif: null, progression: pickProgression(scale, rng(seed), style) };
   }
 
   // A. set the phrase as the song's core motif (returns false if the phrase is too short)

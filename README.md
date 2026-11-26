@@ -5,6 +5,65 @@ A music-making app that runs in your browser. No install needed.
 ## Start it
 Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge works best.
 
+## New in v2.6: play your own melody with keys 1 to 5 (scale keys)
+- Click **1–5** (next to ● in the top bar) to turn on scale keys. Keys **1 to 5** now play the melody track on the
+  notes of the chord that is sounding at the playhead: **1** is the chord's root, and each number is one step up the
+  song's scale (on most chords 3 is the third and 5 the fifth). The difference between two numbers is the number of
+  scale steps between the notes, so 1 → 3 goes up two steps and 5 → 4 down one. **Shift** plays an octave higher.
+- Every note is in key, also in sections that change key (the keys follow the key the bar is in). A colour chord
+  whose root is outside the key starts from the nearest note of the key instead.
+- **To replace the melody:** generate a song, turn on 1–5 and ● (record), press Play and play along. From your first
+  key press the old melody goes quiet, and when you stop (or the loop comes round) your notes replace it up to the
+  end of the bar of your last note. The harmony, counter-melody and lead parts are rewritten to follow your melody.
+  Ctrl+Z undoes the take. Notes snap to the editor's Snap setting.
+- Not playing: press a number to hear it; the status bar lists what 1 to 5 are over the chord at the playhead.
+- While scale keys are on, 2, 3 and 5 no longer play piano keys (the letter keys still do).
+- **🧹 Clear** on every track (and *Clear track* in the editor bar) removes all its notes and keeps the track and its
+  sound. Clearing the melody also clears the harmony, counter-melody and lead that follow it, so the old tune is gone
+  before you record a new one; they are written again from your melody when the take ends. Ctrl+Z undoes it.
+
+## New in v2.5: the rest of the composer's checklist (gaps 4 to 12 from "What composers still do")
+- **Melody arpeggios** slider (generator bar): how often the melody plays broken chords, running through the
+  chord's notes instead of stepping along the scale. There is also a new variation, *broken chord (arpeggio)*.
+  Letting go rebuilds the melody.
+- **Chord variety** slider: from *same loop* (one progression all through) through *some* (the usual) to *lots*
+  (more swaps, up to three colour chords per section anywhere in it, mediants and suspended V chords). Used by Generate.
+- **Notes off the chord are used properly.** Every melody note that is not in its chord must be a passing note,
+  neighbour, appoggiatura or suspension, anticipation or escape tone; anything else moves to the nearest chord tone
+  (unexplained off-chord notes went from about 14% of melody notes to about 1%). Over colour chords the melody takes
+  the chord's own altered note (an A over a borrowed F minor becomes A♭).
+- **Cadences match the chords.** The chords now end each 8-bar phrase to fit the melody: V–I (sometimes with the chord
+  before V in the same bar, or a Vsus4 resolving to V), IV–I in gospel, folk, country, classical and rock, a half
+  cadence on V or a deceptive V–vi on open phrase ends. The melody's last note picks a note of the chord it lands on,
+  so section endings are always on a chord tone.
+- **Style harmony.** Blues plays C7–F7–G7. In minor keys, classical, film, flamenco-flavoured and most game styles
+  use a major V. Jazz, soul, lo-fi, gospel and bossa chords get 9ths; pop, indie, synthwave and dreamy styles add a
+  9th to I and IV. Jazz-type styles sometimes swap V for its tritone substitute (♭II7). Film and game themes use
+  chromatic mediants (♭VI, ♭III, major III) and, in minor, the Neapolitan ♭II before V.
+- **Dynamics and articulation.** Melody phrases swell to their high note and relax into the cadence, pre-choruses and
+  builds grow louder, outros fade, syncopated notes are accented. Sustaining instruments (strings, winds, voices,
+  organ, synth leads) play legato; plucked and struck ones re-articulate repeated notes; slow piano parts are held
+  like the sustain pedal. Songs that end slow down over the last two bars (a ritardando, also written to the .mid
+  file as tempo changes).
+- **Feel.** Notes can now sit slightly off the grid: a laid-back backbeat and bass in hip-hop, soul, funk, reggae,
+  jazz and similar styles, looser hi-hats, a human melody, and strummed guitar chords (down-strokes low to high,
+  up-strokes high to low and softer). Electronic styles stay tight. Bass notes a sixteenth off the kick drum move onto it.
+- **Rhythm.** Some phrases start with a pickup before the bar line, and in pop, rock, soul, Latin and similar styles
+  some downbeat notes come an eighth early, tied over (anticipations). Drums play 4-bar phrases: a pushed kick in the
+  2nd bar and a small snare pickup in the 4th.
+- **Song shape.** The last big chorus carries the song's highest note (now in about 80% of songs, up from about 10%).
+  Before some choruses the band stops for half a bar. The last chorus before the outro may be extended: its last two
+  bars come round again, the first time ending on vi, the second on I.
+- **Accompaniment.** Each section type gets its own arpeggio figure. Classical, title-screen, RPG town, puzzle, tavern
+  and folk songs play broken chords (Alberti on keys and harp, finger-picking on guitar). Slow piano parts add a
+  left hand. With no lead instrument, the intro has the chords instrument play the hook's rhythm and shape.
+- **Second voices.** The harmony part holds its note while the melody moves quickly, avoids parallel fifths and
+  octaves and moves against the melody into long notes. Chord, pad, arpeggio and counter-melody notes that would
+  rub a semitone against the melody on a beat are left out or moved.
+- **Fix:** harmony, counter-melody and lead parts were transposed twice in choruses that change key.
+- Not in this version: 3/4 and 6/8 time (gap 7). The whole app assumes 16 steps per bar, so it needs its own
+  release.
+
 ## New in v2.4: the parts listen to each other (from the "What composers still do" research, gaps 1 to 3)
 - **Every part has its own register.** Chords and pads are now voiced under the melody's lowest note in each 4-bar
   phrase, so they no longer play in the middle of the tune (the pad used to sit inside the melody's octave in about a
@@ -163,6 +222,7 @@ Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge wo
 | Transpose selection | Up/Down arrows (Shift = octave), Left/Right moves |
 | Undo / redo | Ctrl+Z / Ctrl+Y |
 | Play notes from the keyboard | Z S X D C V… (lower octave), Q 2 W 3 E… (upper), [ and ] change octave |
+| Scale keys (1–5 on) | 1–5 play steps of the scale from the current chord's root, Shift = octave up |
 | Record | Press ● then Play, and play notes on your keyboard or a MIDI keyboard |
 | Zoom / scroll | Ctrl+wheel / wheel, Shift+wheel |
 | Set start position | Click the bar ruler |
@@ -172,6 +232,7 @@ Double-click **Start MIDI Music Maker.bat** (or `index.html`). Chrome or Edge wo
 - `js/app.js`: UI, piano roll, sequencer
 - `js/audio.js`: sound engines (samples, synth, MIDI out)
 - `js/generator.js`: song generator (chords, bass, drums, arrangement)
+- `js/perform.js`: dynamics, articulation, timing feel, strums and the closing ritardando
 - `js/arrange.js`: instrument ranges, register plan, chord voice leading, bass line planning and the bass–melody check
 - `js/songform.js`: song form (section plans, per-section chords and energy, exact returns with one change)
 - `js/melody.js`: melody engine (phrase → riff, motif development, candidate scoring, answer / re-pitch)

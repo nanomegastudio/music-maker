@@ -54,6 +54,11 @@
       const t = textBytes(sec.name);
       conductor.push({ tick: Math.round(sec.start * 16 * stepTicks), order: 0, bytes: [0xff, 0x06, ...vlq(t.length), ...t] });
     }
+    // v2.5: tempo changes (ritardando) as tempo events
+    for (const x of song.tempo || []) {
+      const q = Math.round(60000000 / (song.bpm * (x.f > 0 ? x.f : 1)));
+      conductor.push({ tick: Math.round(x.s * stepTicks), order: 0, bytes: [0xff, 0x51, 0x03, (q >> 16) & 255, (q >> 8) & 255, q & 255] });
+    }
     const chunks = [trackChunk(conductor)];
 
     tracks.forEach((t, i) => {
@@ -68,8 +73,9 @@
       if (!t.mute) {
         for (const n of t.notes) {
           const sw = s => s + (s % 2 === 1 ? (song.swing || 0) : 0); // swing delays odd 16ths
-          const on = Math.round(sw(n.s) * stepTicks);
-          const off = Math.round(sw(n.s + n.l) * stepTicks) - (t.drum ? 0 : 1);
+          const d = n.d || 0;   // v2.5: timing offset in steps
+          const on = Math.max(0, Math.round((sw(n.s) + d) * stepTicks));
+          const off = Math.round((sw(n.s + n.l) + d) * stepTicks) - (t.drum ? 0 : 1);
           if (n.t) { const ly = textBytes(n.t); ev.push({ tick: on, order: 1.5, bytes: [0xff, 0x05, ...vlq(ly.length), ...ly] }); }
           ev.push({ tick: on, order: 2, bytes: [0x90 | ch, n.p & 127, Math.max(1, Math.min(127, n.v | 0))] });
           ev.push({ tick: Math.max(on + 1, off), order: 1, bytes: [0x80 | ch, n.p & 127, 0] });

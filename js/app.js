@@ -70,12 +70,12 @@
     const bars = loopBarsValue();   // a loop is as long as the Loop bars box (top-bar Bars edits copy into it)
     const phrase = $('inPhrase').value.trim(), form = $('selForm').value;
     const keepOff = song && song.drumOff ? song.drumOff.slice() : [];
-    const g = Generator.generateSong({ key, scale, style, bars, seed, phrase, form, hookTrack: $('chkHook').checked, full, leap: leapValue(), drumOff: keepOff, structure: $('selStructure').value, instruments: +$('inInstruments').value || 4, progression: $('selProg').value, pack: $('selPack').value, loopBars: loopBarsShown() ? loopBarsValue() : 0, fitBars: full && kb ? kb : 0, keyPlan: $('selKeyPlan').value });
+    const g = Generator.generateSong({ key, scale, style, bars, seed, phrase, form, hookTrack: $('chkHook').checked, full, leap: leapValue(), arp: arpValue(), chordVar: chordVarValue(), drumOff: keepOff, structure: $('selStructure').value, instruments: +$('inInstruments').value || 4, progression: $('selProg').value, pack: $('selPack').value, loopBars: loopBarsShown() ? loopBarsValue() : 0, fitBars: full && kb ? kb : 0, keyPlan: $('selKeyPlan').value });
     nextId = 1;
     const name = `${style} in ${GM.NOTE_NAMES[key]} ${scale.toLowerCase()}`;
     return {
       name, bpm: keep.bpm ? Math.max(30, Math.min(300, +$('inBpm').value || g.bpm)) : g.bpm, bars: g.bars, beatsPerBar: 4, stepsPerBeat: 4,
-      swing: keep.swing ? +$('inSwing').value || 0 : g.swing, gen: g.gen, drumOff: keepOff,
+      swing: keep.swing ? +$('inSwing').value || 0 : g.swing, gen: g.gen, drumOff: keepOff, tempo: g.tempo || null,
       tracks: g.tracks.map(t => newTrack(Object.assign(t, t.role === 'riff' ? { name: 'Hook: ' + (phrase.length > 22 ? phrase.slice(0, 21) + '…' : phrase) } : {}, { volume: ROLE_VOL[t.role] || 0.8 })))
     };
   }
@@ -105,6 +105,21 @@
     return { melody: m.notes, melodyBase: m.notes.map(n => { const k = oct(n); return k ? Object.assign({}, n, { p: n.p - 12 * k }) : n; }), programs };
   };
   // when the melody changes, the parts that follow it are rewritten to match
+  // v2.6: clear a track. Clearing the melody also clears the parts written from it (harmony, counter-melody,
+  // lead), so nothing plays the old tune; they are written again from the new melody after you record one.
+  function clearTrack(t) {
+    if (!t) return;
+    const also = t.role === 'melody' ? song.tracks.filter(x => FOLLOWERS.includes(x.role) && x.notes.length) : [];
+    if (!t.notes.length && !also.length) { status(`“${t.name}” is already empty.`); return; }
+    pushUndo();
+    t.notes = []; t.marks = undefined;
+    also.forEach(x => { x.notes = []; });
+    selection.clear();
+    selectTrack(t.id);
+    changed();
+    const extra = also.length ? ` The ${also.map(x => x.name.toLowerCase()).join(', ').replace(/, ([^,]*)$/, ' and $1')} that follow${also.length === 1 ? 's' : ''} it ${also.length === 1 ? 'was' : 'were'} cleared too and will be rewritten from your new melody.` : '';
+    status(`Cleared “${t.name}”.${extra}${t.role === 'melody' ? ' To record a new one: turn on 1–5 and ●, press Play and play along.' : ''} Ctrl+Z to undo.`);
+  }
   function refreshFollowers(gen) {
     let n = 0;
     song.tracks.forEach(t => {
@@ -203,6 +218,7 @@
         <div class="row">
           <input class="name" value="${t.name.replace(/"/g, '&quot;')}" spellcheck="false">
           <button class="sm dice" title="Generate a new ${t.drum ? 'beat' : t.role === 'riff' ? 'hook from your phrase' : (t.role || 'melody')} for this track">🎲</button>
+          <button class="sm clr" title="Clear: remove all notes from this track (the track and its sound stay)${t.role === 'melody' ? '. The harmony, counter-melody and lead that follow the melody are cleared too' : ''}">🧹</button>
           <button class="sm m${t.mute ? ' on' : ''}" title="Mute">M</button>
           <button class="sm s${t.solo ? ' on' : ''}" title="Solo">S</button>
           <button class="sm del" title="Delete track">✕</button>
@@ -225,6 +241,7 @@
       q('.s').addEventListener('click', () => { t.solo = !t.solo; changed({ tracks: true }); });
       q('.del').addEventListener('click', e => { e.stopPropagation(); deleteTrack(t.id); });
       q('.dice').addEventListener('click', e => { e.stopPropagation(); regeneratePart(t); });
+      q('.clr').addEventListener('click', e => { e.stopPropagation(); clearTrack(t); });
       if (q('.dsounds')) q('.dsounds').addEventListener('click', e => { e.stopPropagation(); openDrumSounds(); });
       q('.vol').addEventListener('input', e => { t.volume = +e.target.value; engine.bus(t); midiMix(); changed(); });
       q('.pan').addEventListener('input', e => { t.pan = +e.target.value; engine.bus(t); midiMix(); changed(); });
@@ -322,9 +339,9 @@
     const key = +$('selKey').value, scale = $('selScale').value, style = $('selStyle').value;
     const form = $('selForm').value;
     const g = song.gen;
-    const leap = leapValue(), drumOff = (song.drumOff || []).slice();
-    if (g && g.key === key && g.scale === scale) return Object.assign({}, g, { style, form, leap, drumOff });
-    return Object.assign(Generator.makeGen({ key, scale, style, form, leap, seed: Date.now() }), { drumOff }, g ? { phrase: g.phrase, hookMotif: g.hookMotif, sections: g.sections } : {});
+    const leap = leapValue(), arp = arpValue(), chordVar = chordVarValue(), drumOff = (song.drumOff || []).slice();
+    if (g && g.key === key && g.scale === scale) return Object.assign({}, g, { style, form, leap, arp, chordVar, drumOff });
+    return Object.assign(Generator.makeGen({ key, scale, style, form, leap, arp, chordVar, seed: Date.now() }), { drumOff }, g ? { phrase: g.phrase, hookMotif: g.hookMotif, sections: g.sections } : {});
   }
 
   const FORM_NAMES = { sentence: 'sentence', period: 'period (question/answer)', call: 'call & response' };
@@ -498,15 +515,17 @@
   const held = new Map();   // id -> {voice, p, startStep}
   let recording = false;
 
-  function liveOn(id, p, v) {
+  function liveOn(id, p, v, track) {
     if (held.has(id)) return;
-    const t = curTrack();
+    const t = track || curTrack();
     engine.ensure();
     const voice = engine.play(t, channelOf(t), p, v, engine.now, null);
     let startStep = null;
     if (recording && playing) {
       const snap = +$('selSnap').value;
       startStep = Math.round(posStep() / snap) * snap % songSteps();
+      // scale keys: the take starts here; the old melody stops sounding from this point on
+      if (id.startsWith('scale') && !take) take = { track: t, start: startStep, notes: new Set(), end: startStep };
     }
     held.set(id, { voice, p, v, startStep, track: t });
   }
@@ -521,11 +540,84 @@
       if (end < h.startStep) end += songSteps();
       const l = h.track.drum ? 1 : Math.max(snap, end - h.startStep);
       if (!recordedUndo) { pushUndo(); recordedUndo = true; }
-      h.track.notes.push({ p: h.p, s: h.startStep, l, v: h.v });
+      const note = { p: h.p, s: h.startStep, l, v: h.v };
+      h.track.notes.push(note);
+      if (id.startsWith('scale')) {
+        if (!take || take.track !== h.track) { finishTake(); take = { track: h.track, start: h.startStep, notes: new Set(), end: 0 }; }
+        take.start = Math.min(take.start, h.startStep);
+        take.notes.add(note);
+        take.end = Math.max(take.end, h.startStep + l);
+      }
       changed();
     }
   }
   let recordedUndo = false;
+
+  // ---- v2.6 scale keys: keys 1-5 play steps of the scale from the root of the chord that is sounding ----------
+  // 1 = the chord's root, 2 = the next note up the scale, ... 5 = four scale steps up (the fifth on most chords).
+  // The difference between two numbers is the number of scale steps between the notes, and every note is in key
+  // (the root of a colour chord outside the key is replaced by the nearest note of the key). Shift = an octave up.
+  // With ● on and the song playing, the keys record onto the melody track and replace the old melody from the first
+  // key press to the end of the bar of the last note (punch in). The parts that follow the melody are rewritten.
+  let scaleKeys = false;
+  let take = null;     // { track, start, notes: Set, end }
+  function scaleKeyPitch(num, step, up) {
+    const g = song.gen;
+    const bar = Math.max(0, Math.floor(step / 16)) % Math.max(1, song.bars);
+    const key = g ? Generator.keyAt(g, bar) : +$('selKey').value;
+    const scaleName = g ? g.scale : $('selScale').value;
+    let sc = GM.SCALES[scaleName] || GM.SCALES['Major'];
+    if (sc.length > 7) sc = GM.SCALES['Major'];
+    const pcs = sc.map(x => (key + x) % 12);
+    let root = key;
+    if (g) {
+      const cell = Generator.chordAtStep(Generator.chordForBar(g, bar), step % 16);
+      root = Generator.chordPCs(key, scaleName, cell, false, g.style)[0];
+    }
+    // the root's place in the scale (a root outside the key: the nearest key note, the lower one on a tie)
+    let ri = pcs.indexOf(root);
+    if (ri < 0) { let bd = 99; pcs.forEach((pc, i) => { const d = Math.min((pc - root + 12) % 12, (root - pc + 12) % 12) + ((pc - root + 12) % 12 === 1 ? 0.1 : 0); if (d < bd) { bd = d; ri = i; } }); }
+    // the "1" sits between A3 and G#4, so 1-5 cover the usual singing range
+    const rootPc = pcs[ri];
+    const one = 57 + ((rootPc - 57) % 12 + 12) % 12;
+    const idx = ri + (num - 1);
+    const pc = pcs[idx % pcs.length];
+    let p = one + (sc[idx % sc.length] + 12 * Math.floor(idx / sc.length)) - sc[ri];
+    if (up) p += 12;
+    return { p, name: GM.NOTE_NAMES[pc], chord: GM.NOTE_NAMES[rootPc] };
+  }
+  const melodyTrack = () => song.tracks.find(t => t.role === 'melody') || song.tracks.find(t => !t.drum);
+  function scaleKeyOn(num, up) {
+    const t = melodyTrack();
+    if (!t) { status('Add an instrument track first.'); return; }
+    if (curTrack() !== t) selectTrack(t.id);
+    const step = playing ? posStep() : playStart;
+    const n = scaleKeyPitch(num, step, up);
+    liveOn('scale' + num + (up ? 'u' : ''), n.p, +$('inVel').value, t);
+    keyFlash.add(n.p); needsDraw = true;
+    if (!playing) status(`Scale keys over ${n.chord}: ${[1, 2, 3, 4, 5].map(k => k + ' = ' + scaleKeyPitch(k, step, false).name).join(', ')}.${recording ? ' Press Play to record.' : ''}`);
+  }
+  function scaleKeyOff(num, up) {
+    const id = 'scale' + num + (up ? 'u' : '');
+    const h = held.get(id);
+    if (h) { keyFlash.delete(h.p); needsDraw = true; }
+    liveOff(id);
+  }
+  // end a take: the old melody notes it played over are removed, the followers rewritten
+  function finishTake() {
+    if (!take) return;
+    const tk = take; take = null;
+    if (!tk.notes.size || !song.tracks.includes(tk.track)) return;
+    const end = Math.ceil(tk.end / 16) * 16;
+    tk.track.notes = tk.track.notes.filter(n => tk.notes.has(n) || n.s < tk.start || n.s >= end);
+    // the new notes replace the old ones exactly: an old note held into the take is cut at its start
+    tk.track.notes.forEach(n => { if (!tk.notes.has(n) && n.s < tk.start && n.s + n.l > tk.start) n.l = Math.max(1, tk.start - n.s); });
+    tk.track.marks = undefined;
+    let followed = 0;
+    if (tk.track.role === 'melody' && song.gen) followed = refreshFollowers(currentGen());
+    changed();
+    status(`Recorded ${tk.notes.size} note${tk.notes.size === 1 ? '' : 's'} over bars ${Math.floor(tk.start / 16) + 1}–${end / 16}, all in key.${followed ? ` The ${followed} part${followed === 1 ? '' : 's'} that follow the melody were rewritten to match.` : ''} Ctrl+Z to undo.`);
+  }
 
   function onMidiIn(msg) {
     const [st, d1, d2] = msg.data;
@@ -553,7 +645,14 @@
     for (const t of song.tracks) for (const n of t.notes) if (n.s >= 0 && n.s < index.length) index[n.s].push([t, n]);
     indexDirty = false;
   }
-  const stepDur = () => 60 / song.bpm / song.stepsPerBeat;
+  // v2.5: the song may slow down (a ritardando at the end): song.tempo = [{ s: step, f: factor of the BPM }]
+  function tempoFactor(step) {
+    if (!song.tempo || !song.tempo.length) return 1;
+    let f = 1;
+    for (const x of song.tempo) { if (x.s <= step) f = x.f; else break; }
+    return f > 0 ? f : 1;
+  }
+  const stepDur = (step = 0) => 60 / (song.bpm * tempoFactor(step)) / song.stepsPerBeat;
 
   function play() {
     if (playing) return;
@@ -573,6 +672,8 @@
   }
 
   function stop(rewind) {
+    for (const id of [...held.keys()]) if (id.startsWith('scale')) liveOff(id);
+    finishTake();
     if (!playing) { if (rewind) { playStart = 0; view.scrollX = 0; needsDraw = true; updatePosition(0); } return; }
     playing = false;
     clearInterval(timer);
@@ -588,20 +689,22 @@
     const ctx = engine.ctx;
     while (nextStepTime < ctx.currentTime + 0.12) {
       if (indexDirty) buildIndex();
-      const sd = stepDur();
+      const sd = stepDur(curStep);
       const swingOff = curStep % 2 === 1 ? (song.swing || 0) * sd : 0;
       const t = nextStepTime + swingOff;
       for (const [track, n] of index[curStep] || []) {
         if (!audible(track)) continue;
+        if (take && track === take.track && n.s >= take.start && !take.notes.has(n)) continue;   // being recorded over
         const dur = track.drum ? 0.1 : Math.max(0.03, n.l * sd - 0.01);
-        engine.play(track, channelOf(track), n.p, n.v, t, dur);
+        // v2.5: n.d = a small timing offset in steps (laid-back snare, strummed chords, human feel)
+        engine.play(track, channelOf(track), n.p, n.v, Math.max(engine.ctx.currentTime, t + (n.d ? n.d * sd : 0)), dur);
       }
       queue.push({ step: curStep, time: nextStepTime });
       if (queue.length > 64) queue.shift();
       nextStepTime += sd;
       curStep++;
       if (curStep >= songSteps()) {
-        if ($('btnLoop').classList.contains('on')) curStep = 0;
+        if ($('btnLoop').classList.contains('on')) { curStep = 0; finishTake(); }
         else { const endAt = nextStepTime; setTimeout(() => { if (playing && engine.now >= endAt - 0.05) stop(true); }, (endAt - ctx.currentTime) * 1000 + 300); clearInterval(timer); break; }
       }
     }
@@ -614,7 +717,7 @@
     let cur = null;
     for (const q of queue) if (q.time <= now) cur = q;
     if (!cur) return playStart;
-    return cur.step + Math.min(1, (now - cur.time) / stepDur());
+    return cur.step + Math.min(1, (now - cur.time) / stepDur(cur.step));
   }
 
   function updatePosition(step) {
@@ -817,7 +920,7 @@
       for (let b = b0; b <= b1; b++) {
         const x = KW + b * BW - sx;
         const deg = Generator.chordForBar(song.gen, b);
-        const c = Generator.chordName(Generator.keyAt(song.gen, b), song.gen.scale, deg);
+        const c = Generator.chordName(Generator.keyAt(song.gen, b), song.gen.scale, deg, song.gen.style);
         const sec = secs.length ? secs.find(q => b >= q.start && b < q.start + q.len) : null;
         const ov = sec ? sec.chordOv && sec.chordOv[b - sec.start] != null : song.gen.chordOv && song.gen.chordOv[b] != null;
         g.fillStyle = ov ? '#3b3360' : (b % 2 ? '#22262f' : '#262b35');
@@ -1121,6 +1224,9 @@
     if (e.key === '[') { octave = Math.max(0, octave - 1); $('octaveInfo').textContent = 'Oct ' + octave; return; }
     if (e.key === ']') { octave = Math.min(7, octave + 1); $('octaveInfo').textContent = 'Oct ' + octave; return; }
     if (e.key === 'Home') { stop(true); return; }
+    // v2.6 scale keys (by key position, so Shift+1 works on every keyboard layout)
+    const sk = scaleKeys && /^(Digit|Numpad)[1-5]$/.test(e.code) ? +e.code.slice(-1) : 0;
+    if (sk) { e.preventDefault(); if (!e.repeat) scaleKeyOn(sk, e.shiftKey); return; }
     if (e.repeat) { if (k in KEYMAP) e.preventDefault(); return; }
     if (k in KEYMAP) {
       e.preventDefault();
@@ -1132,6 +1238,11 @@
   });
   window.addEventListener('keyup', e => {
     const k = e.key.toLowerCase();
+    if (/^(Digit|Numpad)[1-5]$/.test(e.code) && [...held.keys()].some(id => id.startsWith('scale' + e.code.slice(-1)))) {
+      const num = +e.code.slice(-1);
+      scaleKeyOff(num, false); scaleKeyOff(num, true);
+      return;
+    }
     if (k in KEYMAP) {
       const h = held.get('key' + k);
       if (h) { keyFlash.delete(h.p); needsDraw = true; }
@@ -1660,7 +1771,7 @@
   // Chords: progression types per song / section, and a chord per bar
   // =========================================================================
   const CHORD_ROLES = ['chords', 'bass', 'pad', 'arp', 'harmony'];
-  const romanSeq = (gen, prog) => prog.map(d => Generator.chordName(gen.key, gen.scale, d).roman).join('–');
+  const romanSeq = (gen, prog) => prog.map(d => Generator.chordName(gen.key, gen.scale, d, gen.style).roman).join('–');
   const presetOf = prog => Object.keys(Generator.PROGRESSIONS).find(k => Generator.PROGRESSIONS[k].prog.join() === prog.join()) || null;
 
   // rewrite the parts that follow the chords in bars [from, to); the melody is rewritten ('regen') or nudged onto the new chord ('fit')
@@ -1680,7 +1791,7 @@
       // strong-beat melody notes that are not in the new chord move to the nearest chord tone
       for (const n of mel.notes) {
         if (n.s < a || n.s >= b || n.s % 8) continue;
-        const pcs = Generator.chordPCs(Generator.keyAt(gen, Math.floor(n.s / 16)), gen.scale, Generator.chordAtStep(Generator.chordForBar(gen, Math.floor(n.s / 16)), n.s % 16), false);
+        const pcs = Generator.chordPCs(Generator.keyAt(gen, Math.floor(n.s / 16)), gen.scale, Generator.chordAtStep(Generator.chordForBar(gen, Math.floor(n.s / 16)), n.s % 16), false, gen.style);
         if (pcs.includes(n.p % 12)) continue;
         for (const d of [1, -1, 2, -2, 3, -3]) if (pcs.includes(((n.p + d) % 12 + 12) % 12)) { n.p += d; break; }
       }
@@ -1697,7 +1808,7 @@
     if (s) { s.chordOv = s.chordOv || {}; if (deg == null) delete s.chordOv[bar - s.start]; else s.chordOv[bar - s.start] = deg; }
     else { song.gen.chordOv = song.gen.chordOv || {}; if (deg == null) delete song.gen.chordOv[bar]; else song.gen.chordOv[bar] = deg; }
     rechord(bar, bar + 1, 'fit');
-    const c = Generator.chordName(Generator.keyAt(song.gen, bar), song.gen.scale, Generator.chordForBar(song.gen, bar));
+    const c = Generator.chordName(Generator.keyAt(song.gen, bar), song.gen.scale, Generator.chordForBar(song.gen, bar), song.gen.style);
     status(`Bar ${bar + 1} is now ${c.name} (${c.roman})${deg == null ? ', back to the progression' : ''}. Chords, bass, pad, arpeggio and harmony follow it, and melody notes on the beat moved onto the chord. Ctrl+Z to undo.`);
     playChord(bar);
   }
@@ -1706,7 +1817,7 @@
     const t = song.tracks.find(x => x.role === 'chords') || song.tracks.find(x => !x.drum);
     if (!t || !song.gen) return;
     engine.ensure();
-    Generator.chordPCs(Generator.keyAt(song.gen, bar), song.gen.scale, Generator.chordForBar(song.gen, bar), false)
+    Generator.chordPCs(Generator.keyAt(song.gen, bar), song.gen.scale, Generator.chordForBar(song.gen, bar), false, song.gen.style)
       .forEach(pc => engine.play(t, channelOf(t), 60 + ((pc - 60) % 12 + 12) % 12, 80, engine.now, 0.6));
   }
 
@@ -1746,14 +1857,14 @@
     const s = secs().length ? secs()[secAtBar(bar)] : null;
     const ov = s ? s.chordOv && s.chordOv[bar - s.start] != null : gen.chordOv && gen.chordOv[bar] != null;
     menu.innerHTML = `<div class="cm-head">Bar ${bar + 1}${s ? ' · ' + s.name : ''}</div><div class="cm-grid">` +
-      [0, 1, 2, 3, 4, 5, 6].map(d => { const c = Generator.chordName(Generator.keyAt(gen, bar), gen.scale, d); return `<button data-d="${d}" class="${d === cur ? 'on' : ''}">${c.name}<small>${c.roman}</small></button>`; }).join('') +
+      [0, 1, 2, 3, 4, 5, 6].map(d => { const c = Generator.chordName(Generator.keyAt(gen, bar), gen.scale, d, gen.style); return `<button data-d="${d}" class="${d === cur ? 'on' : ''}">${c.name}<small>${c.roman}</small></button>`; }).join('') +
       `</div>${ov ? '<button class="cm-reset">↺ Back to the progression</button>' : ''}`;
     menu.style.display = 'block';
     const wrap = $('rollWrap').getBoundingClientRect();
     menu.style.left = Math.max(4, Math.min(x, wrap.width - 250)) + 'px';
     menu.style.top = (y + 6) + 'px';
     menu.querySelectorAll('.cm-grid button').forEach(btn => {
-      btn.onmouseenter = () => { const t = song.tracks.find(q => q.role === 'chords') || song.tracks.find(q => !q.drum); if (!t) return; engine.ensure(); Generator.chordPCs(Generator.keyAt(gen, bar), gen.scale, +btn.dataset.d, false).forEach(pc => engine.play(t, channelOf(t), 60 + ((pc - 60) % 12 + 12) % 12, 60, engine.now, 0.35)); };
+      btn.onmouseenter = () => { const t = song.tracks.find(q => q.role === 'chords') || song.tracks.find(q => !q.drum); if (!t) return; engine.ensure(); Generator.chordPCs(Generator.keyAt(gen, bar), gen.scale, +btn.dataset.d, false, gen.style).forEach(pc => engine.play(t, channelOf(t), 60 + ((pc - 60) % 12 + 12) % 12, 60, engine.now, 0.35)); };
       btn.onclick = () => { closeChordMenu(); setBarChord(bar, +btn.dataset.d); };
     });
     const rs = menu.querySelector('.cm-reset');
@@ -1770,6 +1881,12 @@
     return max <= 2 ? 'scale steps only' : max <= 4 ? 'up to a 3rd' : max <= 6 ? 'up to a 4th' : max === 7 ? 'up to a 5th' : max <= 9 ? 'up to a 6th' : max <= 11 ? 'up to a 7th' : 'up to an octave';
   }
   function showLeap() { $('leapVal').textContent = leapText(leapValue()); }
+  // v2.5: melody arpeggios and chord variety
+  const arpValue = () => $('inArp') ? +$('inArp').value / 100 : 0.15;
+  const chordVarValue = () => $('inChordVar') ? +$('inChordVar').value / 100 : 0.5;
+  const amountText = v => v <= 0 ? 'none' : v < 0.25 ? 'a few' : v < 0.5 ? 'some' : v < 0.75 ? 'many' : 'lots';
+  const varText = v => v < 0.15 ? 'same loop' : v < 0.4 ? 'a little' : v < 0.6 ? 'some' : v < 0.8 ? 'a lot' : 'lots';
+  function showArp() { $('arpVal').textContent = amountText(arpValue()); $('chordVarVal').textContent = varText(chordVarValue()); }
 
   // =========================================================================
   // Projects: save the whole current state (IndexedDB, with a localStorage fallback)
@@ -1841,7 +1958,7 @@
     status(`Instruments: ${pk ? pk.name : 'style default'} (${parts.map(t => `${t.name} → ${GM.GM_NAMES[t.program]}`).join(', ')}). Ctrl+Z undoes it.`, true);
   }
 
-  const CONTROL_IDS = ['selStyle', 'selKey', 'selScale', 'selForm', 'selLength', 'inLoopBars', 'selStructure', 'inInstruments', 'selProg', 'selKeyPlan', 'selPack', 'inPhrase', 'inLeap', 'selSnap', 'selLen', 'inVel', 'inReverb', 'selSecScope'];
+  const CONTROL_IDS = ['selStyle', 'selKey', 'selScale', 'selForm', 'selLength', 'inLoopBars', 'selStructure', 'inInstruments', 'selProg', 'selKeyPlan', 'selPack', 'inPhrase', 'inLeap', 'inArp', 'inChordVar', 'selSnap', 'selLen', 'inVel', 'inReverb', 'selSecScope'];
   let project = { id: null, name: null, dirty: false, savedAt: null };
 
   function captureUI() {
@@ -2032,6 +2149,9 @@
       $('selPack').value = song.gen.pack && Generator.PACKS[song.gen.pack] ? song.gen.pack : 'auto';
       $('selKeyPlan').value = song.gen.keyPlan && SongForm.KEY_PLANS[song.gen.keyPlan] ? song.gen.keyPlan : 'auto';
       if (typeof song.gen.leap === 'number') { $('inLeap').value = Math.round(song.gen.leap * 100); showLeap(); }
+      if (typeof song.gen.arp === 'number') $('inArp').value = Math.round(song.gen.arp * 100);
+      if (typeof song.gen.chordVar === 'number') $('inChordVar').value = Math.round(song.gen.chordVar * 100);
+      showArp();
     }
     selSec = -1;
     syncAll();
@@ -2137,6 +2257,13 @@
     $('btnPlay').onclick = () => playing ? stop() : play();
     $('btnStop').onclick = () => stop(true);
     $('btnLoop').onclick = e => e.currentTarget.classList.toggle('on');
+    $('btnScaleKeys').onclick = e => {
+      scaleKeys = !scaleKeys;
+      e.currentTarget.classList.toggle('on', scaleKeys);
+      const t = melodyTrack();
+      if (scaleKeys && t) selectTrack(t.id);
+      status(scaleKeys ? `Scale keys on: 1 to 5 play the notes of the chord that is sounding, 1 = its root, each number one scale step up (Shift = an octave up). Every note is in key. To replace the melody: turn on ●, press Play and play along.` : 'Scale keys off: 2, 3 and 5 play piano keys again.');
+    };
     $('btnRec').onclick = e => {
       recording = !recording;
       e.currentTarget.classList.toggle('on', recording);
@@ -2201,6 +2328,17 @@
     $('selSecScope').onchange = () => { renderSections(); persistSession(); };
     // melody leaps: the label follows the slider, letting go rebuilds the melody
     $('inLeap').oninput = showLeap;
+    $('inArp').oninput = showArp;
+    $('inChordVar').oninput = showArp;
+    $('inArp').onchange = () => {
+      showArp();
+      const mel = song.tracks.find(t => t.role === 'melody');
+      if (!mel) { status(`Melody arpeggios: ${amountText(arpValue())}. Used the next time a melody is generated.`); return; }
+      regeneratePart(mel);
+      status(`Melody rebuilt (arpeggios: ${amountText(arpValue())}). ${melodyReport()} Ctrl+Z to undo.`, true);
+    };
+    $('inChordVar').onchange = () => { showArp(); persistSession(); status(`Chord variety: ${varText(chordVarValue())}. Click Generate new song to hear it (the chords are planned when a song is generated).`); };
+    showArp();
     $('inLeap').onchange = () => {
       showLeap();
       const mel = song.tracks.find(t => t.role === 'melody');
@@ -2229,7 +2367,7 @@
     $('btnAddDrums').onclick = () => addTrack(true);
     $('btnZoomIn').onclick = () => zoom(1.25);
     $('btnZoomOut').onclick = () => zoom(0.8);
-    $('btnClear').onclick = () => { const t = curTrack(); if (!t.notes.length) return; pushUndo(); t.notes = []; t.marks = undefined; selection.clear(); changed(); status('Track cleared. Ctrl+Z to undo.'); };
+    $('btnClear').onclick = () => clearTrack(curTrack());
 
     new ResizeObserver(resize).observe($('rollWrap'));
 
@@ -2256,6 +2394,8 @@
       if (session.project) project = session.project;
       applyUI(session.ui);
     } else if (song.gen && typeof song.gen.leap === 'number') $('inLeap').value = Math.round(song.gen.leap * 100);
+    if (song.gen && typeof song.gen.arp === 'number') $('inArp').value = Math.round(song.gen.arp * 100);
+    if (song.gen && typeof song.gen.chordVar === 'number') $('inChordVar').value = Math.round(song.gen.chordVar * 100);
     // the equalizer you last used (it may be newer than the saved session)
     try { setEqState(JSON.parse(localStorage.getItem(EQ_KEY)), true); } catch (e) { }
     showLeap();

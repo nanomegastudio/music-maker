@@ -108,6 +108,8 @@
 
   function sectionProg(base, type, len, ctx) {
     const { r, minor, st, next } = ctx;
+    // v2.5: "Chord variety" (0..1, 0.5 = the usual): 0 keeps the plain loop, 1 swaps and colours chords much more often
+    const cv = typeof ctx.chordVar === 'number' ? ctx.chordVar : 0.5;
     if (!base || base.length !== 4 || len < 4) return base.slice();
     const job = type === 'P' || type === 'U' ? 'pre' : type === 'B' ? 'bridge' : ['C', 'D', 'L', 'O'].includes(type) ? 'hook' : 'verse';
     const span = Math.min(len, 16);
@@ -119,7 +121,7 @@
       let grp = base.slice();
       const last = g === groups - 1;
       // a middle (odd) group: swap one chord, not the first
-      if (g % 2 === 1 && !last || (groups > 2 && last && r.chance(0.4))) {
+      if (cv >= 0.15 && (g % 2 === 1 && !last || (groups > 2 && last && r.chance(0.4)) || (g > 0 && r.chance(Math.max(0, cv - 0.5) * 1.6)))) {
         const i = 1 + Math.floor(r() * 3);
         for (let t = 0; t < 4; t++) { const s = swapFor(base[i], minor, r); if (s !== grp[i - 1] && s !== grp[i + 1]) { grp[i] = s; break; } }
       }
@@ -147,12 +149,46 @@
     if (job === 'hook' && !st.calm) {
       for (let i = 3; i < out.length; i += 4) if (r.chance(0.35) && typeof out[i] === 'number') out[i] = collapse([out[i], out[i] === 4 ? 3 : 4]);
     }
+    // v2.5 (gap 5): cadences planned with the melody's phrase ends (every 8 bars). The melody closes on the last
+    // phrase of a verse or chorus and stays open on the others; the chords now match: a perfect cadence (V–I, often
+    // with the chord before V squeezed into the same bar, or a 4-3 suspension on V), a plagal one (IV–I) in some
+    // styles, a half cadence (ending on V) or a deceptive one (V–vi) on the open phrase ends.
+    const protect = new Set();
+    const style = ctx.style;
+    const SUS = ['Pop', 'Rock', 'Gospel', 'Country', 'Folk', 'Classical', 'Cinematic', 'Synthwave', 'Indie', 'Menu / title theme', 'Overworld adventure', 'RPG town'];
+    const PLAGAL = ['Gospel', 'Folk', 'Country', 'Classical', 'Rock'];
+    if ((job === 'hook' || job === 'verse') && out.length >= 8 && len <= 16 && !st.edm) {
+      for (let e = 7; e < out.length; e += 8) {
+        const last = e === out.length - 1;
+        let kind = null;
+        if (job === 'hook') {
+          if (last) kind = (!next || next === 'O' || next === type || r.chance(0.5)) ? (PLAGAL.includes(style) && r.chance(0.35) ? 'plagal' : 'perfect') : null;
+          else kind = r.chance(0.25) ? 'deceptive' : r.chance(0.55) ? 'half' : null;
+        } else if (!last && r.chance(0.5)) kind = 'half';
+        if (kind === 'perfect') {
+          const pre = minor ? 3 : r.pick([1, 3]);
+          out[e - 1] = SUS.includes(style) && r.chance(0.4) ? ['Vsus', 4] : r.chance(0.35) ? [pre, 4] : 4;
+          out[e] = 0;
+        } else if (kind === 'plagal') { out[e - 1] = 3; out[e] = 0; }
+        else if (kind === 'half') out[e] = 4;
+        else if (kind === 'deceptive') { out[e - 1] = 4; out[e] = 5; }
+        if (kind) { protect.add(e - 1); protect.add(e); }
+      }
+    }
+    if (protect.size) out.cadences = [...protect];
+    // jazz: the tritone substitute (bII7) for a V that resolves to I
+    if (['Jazz', 'Bossa nova', 'Lo-fi', 'R&B / Soul'].includes(style)) {
+      for (let i = 0; i < out.length - 1; i++) if (out[i] === 4 && plainOf(out[i + 1]) === 0 && r.chance(0.4)) { out[i] = 'sub'; protect.add(i); }
+    }
     // colour chords, at the style's rate
-    const rate = st.colour != null ? st.colour : st.edm ? 0.25 : st.calm ? 0.3 : 0.5;
-    if (out.length >= 8 && r.chance(rate)) {
-      const from = Math.floor(out.length / 2), to = out.length - (job === 'pre' || job === 'bridge' ? 2 : 1);
+    const MEDIANT = ['Cinematic', 'Menu / title theme', 'Overworld adventure', 'Synthwave', 'Sci-fi space', 'Boss battle'];
+    const rate = Math.min(1, (st.colour != null ? st.colour : MEDIANT.includes(style) ? 0.8 : st.edm ? 0.25 : st.calm ? 0.3 : 0.5) * cv * 2);
+    // high chord variety: up to three colour chords in a section
+    const tries = cv > 0.6 ? 1 + Math.round((cv - 0.6) * 5) : 1;
+    for (let t = 0; t < tries; t++) if (out.length >= 8 && r.chance(rate)) {
+      const from = cv > 0.6 ? 1 : Math.floor(out.length / 2), to = out.length - (job === 'pre' || job === 'bridge' ? 2 : 1);
       const spots = [];
-      for (let i = from; i <= to; i++) if (typeof out[i] === 'number') spots.push(i);
+      for (let i = from; i <= to; i++) if (typeof out[i] === 'number' && !protect.has(i)) spots.push(i);
       if (spots.length) {
         const i = r.pick(spots), d = out[i], nextC = i + 1 < out.length ? plainOf(out[i + 1]) : null;
         const choices = [];
@@ -162,9 +198,22 @@
         if (minor && d === 4) choices.push('V');
         if (minor && d === 3) choices.push('IV');
         if (typeof nextC === 'number' && [1, 3, 4, 5].includes(nextC) && !isDim(nextC, minor) && nextC !== d) choices.push('sec');
+        // film and game themes: chromatic mediants (a major chord a third away) and, in minor, the Neapolitan before V
+        // high chord variety: mediants and suspensions in any style
+        if (cv > 0.7) {
+          if (!minor && (d === 2 || d === 5)) choices.push('III');
+          if (!minor && d === 3) choices.push('b6');
+          if (d === 4) choices.push('vsus');
+        }
+        if (MEDIANT.includes(style)) {
+          if (!minor && (d === 2 || d === 5)) choices.push('III', 'III');
+          if (!minor && (d === 3 || d === 5)) choices.push('b6');
+          if (!minor && d === 0 && i > 0) choices.push('b3');
+          if (minor && d === 3 && nextC === 4) choices.push('N', 'N');
+        }
         if (choices.length) {
           const c = r.pick(choices);
-          out[i] = c === 'sec' ? [d, 'V/' + nextC] : c;
+          out[i] = c === 'sec' ? [d, 'V/' + nextC] : c === 'vsus' ? ['Vsus', 4] : c;
         }
       }
     }
@@ -173,11 +222,11 @@
     return out;
   }
   // a chorus return over new chords: swap some chords for ones of the same job (the tune still fits)
-  function reharmonise(prog, minor, r) {
+  function reharmonise(prog, minor, r, keep = []) {
     const out = prog.map(c => Array.isArray(c) ? c.slice() : c);
     let changed = 0;
     for (let i = 1; i < out.length; i++) {
-      if (typeof out[i] !== 'number' || out[i] === 4) continue;
+      if (typeof out[i] !== 'number' || out[i] === 4 || keep.includes(i)) continue;
       if (r.chance(0.45)) { const s = swapFor(out[i], minor, r); if (s !== out[i]) { out[i] = s; changed++; } }
     }
     if (!changed) { const i = out.findIndex((c, k) => k > 0 && typeof c === 'number' && c !== 4); if (i > 0) out[i] = swapFor(out[i], minor, r); }
@@ -221,6 +270,13 @@
     const hasChorus = spec.some(s => s.type === 'C' || s.type === 'D');
     if (keyPlan === 'auto') keyPlan = st.keyChange && !(tpl && tpl.loop) ? (hasChorus && r.chance(0.2) ? 'chorus3' : r.chance(0.55) ? 'lift' : 'none') : 'none';
     if (keyPlan === 'chorus3' && (!hasChorus || (tpl && tpl.loop))) keyPlan = tpl && tpl.loop ? 'none' : 'lift';
+    // v2.5 (gap 10): the last chorus before the outro may be extended: its last two bars come round again
+    // (the first time the cadence is deceptive, V–vi, the second time it lands, V–I)
+    if (!(tpl && tpl.loop) && !(gen.fitBars > 0) && !st.edm && !st.calm && spec.length > 2) {
+      const hi = spec.map((x, i) => i).filter(i => HOOK_TYPES.includes(spec[i].type)).pop();
+      const nx = hi != null ? spec[hi + 1] : null;
+      if (hi != null && counts[spec[hi].type] > 1 && (!nx || nx.type === 'O') && spec[hi].len >= 8 && r.chance(0.6)) { spec[hi].ext = 2; spec[hi].len += 2; }
+    }
     const sections = spec.map((s, i) => {
       const n = seen[s.type] = (seen[s.type] || 0) + 1;
       const info = SECTION[s.type];
@@ -242,6 +298,7 @@
       const base = (tpl && tpl.names && tpl.names[s.type]) || null;
       const name = (base || info.name) + (!base && info.name === 'A' ? (counts.A > 1 ? n : '') : counts[s.type] > 1 ? ' ' + n : '');
       const sec = { type: s.type, start, len: s.len, n, name, base, energy, change, prog: progFor[s.type].slice(), color: info.color };
+      if (s.ext) sec.ext = s.ext;
       start += s.len;
       return sec;
     });
@@ -251,10 +308,18 @@
       const lockedHere = (locked && !['P', 'U', 'B'].includes(sec.type)) || (tpl && tpl.verse && sec.prog.length !== 4);
       if (lockedHere) return;
       const next = sections[i + 1] ? sections[i + 1].type : null;
-      const k = sec.type + sec.len + '>' + (next || '');
-      if (!progCache[k]) progCache[k] = sectionProg(sec.prog, sec.type, sec.len, { r, minor, st: st0, next });
+      const baseLen = sec.len - (sec.ext || 0);
+      const k = sec.type + baseLen + '>' + (next || '');
+      if (!progCache[k]) progCache[k] = sectionProg(sec.prog, sec.type, baseLen, { r, minor, st: st0, next, style: gen.style, chordVar: gen.chordVar });
       sec.prog = progCache[k].map(c => Array.isArray(c) ? c.slice() : c);
-      if (sec.change === 'reharm') sec.prog = reharmonise(sec.prog, minor, r);
+      if (progCache[k].cadences) sec.cadences = progCache[k].cadences.slice();
+      if (sec.ext) {
+        const p = tile(sec.prog, baseLen), last2 = p.slice(-2).map(c => Array.isArray(c) ? c.slice() : c);
+        if (plainOf(p[baseLen - 1]) === 0) p[baseLen - 1] = 5;          // first time round: deceptive
+        sec.prog = p.concat(last2);
+        sec.cadences = (sec.cadences || []).concat([baseLen - 2, baseLen - 1, baseLen, baseLen + 1]);
+      }
+      if (sec.change === 'reharm') sec.prog = reharmonise(sec.prog, minor, r, sec.cadences);
     });
     // v2.3 key plan: choruses (and an outro that follows one) a minor third up; the bar before each move plays the
     // new key's V (bVII of the home key), and the next section simply starts back home
@@ -270,6 +335,13 @@
       });
       sections.forEach(sec => { if (sec.change === 'keyup') sec.change = 'layer'; });
     }
+    // v2.5 (gap 10): a "stop" before some choruses: the band plays the first half of the last bar and leaves the
+    // second half empty for the vocal pickup, then the chorus comes in full
+    const STOPS = ['Pop', 'Rock', 'Punk', 'Funk', 'Disco', 'Country', 'R&B / Soul', 'Gospel', 'Latin (salsa)', 'Indie', 'Reggaeton', 'Afrobeats'];
+    if (!(tpl && tpl.loop) && STOPS.includes(gen.style)) sections.forEach((sec, i) => {
+      const nx = sections[i + 1];
+      if (nx && HOOK_TYPES.includes(nx.type) && nx.energy > sec.energy && sec.type !== 'U' && r.chance(0.35)) sec.exit = 'stop';
+    });
     sections.keyPlan = keyPlan;
     return sections;
   }
@@ -323,6 +395,19 @@
         const dropHalf = sec.change === 'dropout' && bi < sec.len / 2;
         if (dropHalf) { for (let s = 0; s < 16; s += 4) add(42, base + s, H.humanVel(r, 50, 6)); continue; }
         if (st.calm && E <= 1) { if (bi % 2 === 0) add(81, base + 8, 60); continue; }
+        const stopBar = lastBar && sec.exit === 'stop';
+        if (stopBar) {                                              // the stop: a big hit, then silence
+          add(36, base, 112); add(49, base, 110);
+          for (let s = 2; s < 8; s++) { const pat = st.drums[42] || st.drums[51] || ''; if (pat[s] === 'x') add(42, base + s, 70); }
+          continue;
+        }
+        // v2.5 (gap 9): the groove is a 4-bar phrase: a pushed kick in bar 2, a small snare pickup in bar 4
+        if (E >= 2 && !st.calm && sec.type !== 'U' && !lastBar) {
+          const kp = st.drums[36] || st.drums[35] || '';
+          if (bi % 4 === 1 && kp && kp[14] === '.' && kp[15] === '.' && sec.type !== 'K' && r.chance(0.6)) add(kp === st.drums[36] ? 36 : 35, base + 14, H.humanVel(r, 84, 6));
+          const fk = st.fill || 'toms';
+          if (bi % 4 === 3 && fk !== 'none' && r.chance(0.7)) { const sn = Array.isArray(fk) ? fk[0] : (st.drums[38] ? 38 : st.drums[39] ? 39 : 38); add(sn, base + 14, H.humanVel(r, 72, 6)); add(sn, base + 15, H.humanVel(r, 84, 6)); }
+        }
         for (const [key, pat] of Object.entries(st.drums)) {
           const p = +key;
           const isKick = p === 35 || p === 36, isHat = [42, 44, 46, 51, 54, 69, 70, 82].includes(p);
@@ -397,6 +482,8 @@
     let walks = 0;
     const melody = ctx.melodyHome || [];
     const scalePcs = H.scalePcs(gen);
+    const kp = st.drums[36] || st.drums[35] || '';
+    const kicks = new Set([...kp].map((c, i) => c === 'x' ? i : -1).filter(i => i >= 0));
     gen.sections.forEach((sec, si) => {
       const E = sec.energy, next = gen.sections[si + 1];
       for (let bi = 0; bi < sec.len; bi++) {
@@ -421,7 +508,7 @@
         });
         // walk-up into the next section (scale steps up to its first bass note)
         const lastBar = bi === sec.len - 1;
-        if (lastBar && next && next.energy >= E && E >= 2 && !st.edm && !st.calm && !st.walk && sec.type !== 'U' && !pedals.has(b) && r.chance(0.55)) {
+        if (lastBar && sec.exit !== 'stop' && next && next.energy >= E && E >= 2 && !st.edm && !st.calm && !st.walk && sec.type !== 'U' && !pedals.has(b) && r.chance(0.55)) {
           const nx = at(b + 1, 0);
           if (nx) {
             const target = nx.p + keyShiftAt(gen, b + 1) - keyShiftAt(gen, b);
@@ -438,6 +525,13 @@
             steps.forEach((s, k) => bar.push({ p: walk[k], s: b * 16 + s, l: steps.length === 4 ? 2 : 4, v: H.humanVel(r, 90 + k * 3, 4) }));
           }
         }
+        // v2.5 (gap 9): bass notes a sixteenth off a kick drum move onto it (bass and kick lock together)
+        if (E >= 3 && !st.walk && kicks.size) bar.forEach(n => {
+          const s0 = n.s - b * 16;
+          if (kicks.has(s0) || s0 % 4 === 0) return;
+          if (kicks.has(s0 - 1)) { n.s -= 1; n.l += 1; } else if (kicks.has(s0 + 1) && n.l > 1) { n.s += 1; n.l -= 1; }
+        });
+        if (lastBar && sec.exit === 'stop') { for (let k = bar.length - 1; k >= 0; k--) { const s0 = bar[k].s - b * 16; if (s0 >= 8) bar.splice(k, 1); else bar[k].l = Math.min(bar[k].l, 8 - s0); } }
         notes.push(...bar);
       }
     });
@@ -457,6 +551,22 @@
     const rg = A.rangeOf(program);
     const prof = A.melodyProfile(ctx.melodyHome || [], total(gen.sections), gen.sections, null);
     let prev = null;
+    // v2.5 (gap 11): parts played the way the instrument is played
+    const fam = program >> 3;
+    const BROKEN = ['Classical', 'Menu / title theme', 'RPG town', 'Puzzle / casual', 'Fantasy tavern', 'Folk'];
+    const broken = !st.power && BROKEN.includes(gen.style) && (fam <= 1 || program === 46 || fam === 3);   // Alberti bass / finger-picking
+    const ballad = !st.power && !st.edm && fam === 0 && (st.bpm || 120) < 100;                            // piano left hand
+    // intro riff: with no lead instrument, the chords instrument plays the hook's rhythm and shape in the intro
+    let hookLine = null;
+    if (ctx.noLead && ctx.melodyHome && ctx.melodyHome.length) {
+      const hs = gen.sections.find(x => HOOK_TYPES.includes(x.type) && ctx.melodyHome.some(n => n.s >= x.start * 16 && n.s < (x.start + 2) * 16));
+      if (hs) {
+        const by = new Map();
+        ctx.melodyHome.filter(n => n.s >= hs.start * 16 && n.s < (hs.start + 2) * 16).forEach(n => { if (!by.has(n.s) || by.get(n.s).p < n.p) by.set(n.s, n); });
+        hookLine = [...by.values()].map(n => ({ s: n.s - hs.start * 16, l: n.l, p: n.p }));
+      }
+    }
+    const hookLo = hookLine ? Math.min(...hookLine.map(n => n.p)) : 0, hookHi = hookLine ? Math.max(...hookLine.map(n => n.p)) : 0;
     gen.sections.forEach(sec => {
       const E = sec.energy;
       for (let bi = 0; bi < sec.len; bi++) {
@@ -486,7 +596,41 @@
           }
         }
         const base = E <= 1 ? 55 : E === 2 ? 62 : E === 3 ? 70 : 76;
+        const stop = bi === sec.len - 1 && sec.exit === 'stop';
+        if (stop) rhythm = [[0, 6]];      // the stop: one hit, then silence
+        if (broken && E >= 2 && E <= 4 && !stop) {
+          // broken chords in eighths: low, high, middle, high (Alberti) on keys and harp, low, middle, high, middle when picked
+          for (const h0 of [0, 8]) {
+            const v = voice(h0), lo = v[0], mid = v[1], hi = v[v.length - 1];
+            const fig = fam === 3 ? [lo, mid, hi, mid] : [lo, hi, mid, hi];
+            fig.forEach((p, k) => notes.push({ p, s: b * 16 + h0 + k * 2, l: 2, v: H.humanVel(r, base - 4 + (k === 0 ? 6 : 0), 4) }));
+          }
+          continue;
+        }
+        if (sec.type === 'I' && hookLine && E <= 1) {
+          // intro riff: the hook's rhythm and contour on the chord's notes, over a soft held chord
+          const v = voice(0), cands = v.concat(v.map(p => p + 12)).sort((a, c) => a - c);
+          hookLine.filter(n => Math.floor(n.s / 16) === bi % 2).forEach(n => {
+            const k = Math.round((n.p - hookLo) / Math.max(1, hookHi - hookLo) * (cands.length - 1));
+            const sb = n.s % 16;
+            const pcs = H.chordPCs(gen.key, gen.scale, H.chordAtStep(cell, sb), st.sevenths);
+            let p = cands[k];
+            if (!pcs.includes(p % 12)) p = cands.reduce((a, q) => pcs.includes(q % 12) && Math.abs(q - cands[k]) < Math.abs(a - cands[k]) ? q : a, cands[0]);
+            notes.push({ p, s: b * 16 + sb, l: Math.min(n.l, 16 - sb, 6), v: H.humanVel(r, 70, 4) });
+          });
+          v.forEach(p => notes.push({ p, s: b * 16, l: 16, v: H.humanVel(r, 44, 3) }));
+          continue;
+        }
         for (const [s, l] of rhythm) for (const p of voice(s)) notes.push({ p, s: b * 16 + s, l, v: H.humanVel(r, base + (s % 4 === 0 ? 6 : 0), 5) });
+        if (ballad && E >= 2 && !stop) {
+          // left hand: root and fifth an octave or so under the right hand, held until the chord changes
+          for (const h0 of two ? [0, 8] : [0]) {
+            const pcs = H.chordPCs(gen.key, gen.scale, H.chordAtStep(cell, h0), false);
+            const root = 40 + ((pcs[0] - 40) % 12 + 12) % 12;
+            if (root + 7 >= voice(h0)[0]) continue;
+            [root, root + 7].forEach(p => notes.push({ p, s: b * 16 + h0, l: two ? 8 : 16, v: H.humanVel(r, base - 8, 4) }));
+          }
+        }
       }
     });
     return notes;
@@ -512,6 +656,7 @@
     const M = Melody._;
     const st = H.STYLES[gen.style] || H.STYLES['Pop'];
     const h = H.harmony(gen);
+    Melody.setArp(h.arp || 0);
     const form = gen.form && gen.form !== 'auto' ? gen.form : r.pick(['sentence', 'period', 'call']);
     const leap = typeof gen.leap === 'number' ? gen.leap : 0.35;
     // v2.3: every section job gets its own 2-bar idea; they are related by rhythm, not copies of the hook
@@ -636,9 +781,12 @@
     const drift = x => { x.notes.forEach(n => { n.v = Math.max(20, Math.min(127, n.v + Math.round((r() * 2 - 1) * 6))); }); return x; };
 
     const cache = {};
+    const nctTotal = { colour: 0, fixed: 0, kept: 0 };
     const notes = [], marks = [];
     let hookSec = null;
-    gen.sections.forEach(sec => {
+    gen.sections.forEach(secFull => {
+      // an extended last chorus is written at its normal length, then its last two bars come round again
+      const sec = secFull.ext ? Object.assign({}, secFull, { len: secFull.len - secFull.ext }) : secFull;
       const kind = KIND[sec.type];
       const hs = shiftH(sec.start);
       let x = null, label = '';
@@ -689,7 +837,14 @@
         if (kind === 'bridge' && !label) label = 'new contrasting idea';
         if (kind === 'pre' && !label) label = 'its own cell, rising';
       }
-      fitChords(x, hs, sec.len);
+      if (secFull.ext) {
+        const a = (sec.len - 2) * 16, e = sec.len * 16;
+        x.notes = x.notes.concat(x.notes.filter(n => n.s >= a && n.s < e).map(n => Object.assign({}, n, { s: n.s + secFull.ext * 16 })));
+        x.marks.push({ bar: sec.len, kind: 'cad', label: 'Last line again (extended ending)' });
+      }
+      fitChords(x, hs, secFull.len);
+      const nct = Melody.treatNonChordTones(x.notes, hs);
+      nctTotal.colour += nct.colour; nctTotal.fixed += nct.fixed; nctTotal.kept += nct.kept;
       x.notes.forEach(n => { n.s += sec.start * 16; notes.push(n); });
       if (!x.marks.length) x.marks.push({ bar: 0, kind: kind === 'outro' ? 'cad' : 'vary', label: label });
       x.marks.forEach((k, i) => marks.push(Object.assign(k, { bar: k.bar + sec.start }, i === 0 ? { section: sec.name + (label ? ' (' + label + ')' : '') } : {})));
@@ -714,6 +869,7 @@
     });
     Melody.limitLeaps(notes, h);
     const totalBars = total(gen.sections);
+    const perf = shapeLine(notes, marks, gen, h, r, st, leap);
     const score = Melody.scoreMelody(notes, h, totalBars);
     // v2.3: the song's score is the length-weighted mean of its sections' scores (repeats are meant to repeat)
     if (secScores.length) { const w = secScores.reduce((a, [, l]) => a + l, 0); score.total = secScores.reduce((a, [s, l]) => a + s * l, 0) / w; }
@@ -722,7 +878,84 @@
     marks.forEach(k => { if (k.kind === 'motif' || k.kind === 'vary' || k.kind === 'frag') { motifBars.add(k.bar); if (/^(Idea|Call: idea|Call again)/.test(k.label)) motifBars.add(k.bar + 1); } });
     const sung = new Set(notes.filter(n => n.s < totalBars * 16).map(n => Math.floor(n.s / 16)));
     const motifShare = sung.size ? [...motifBars].filter(b => sung.has(b)).length / sung.size : 0;
-    return { notes: notes.filter(n => n.s < totalBars * 16), marks, form, score, motifShare };
+    return { notes: notes.filter(n => n.s < totalBars * 16), marks, form, score, motifShare, nct: nctTotal, perf };
+  }
+
+  // v2.5 (gaps 9 and 10): the whole song's line
+  //   - one planned high point: the last big chorus gets the song's highest note (a chord tone just above
+  //     everything sung before), so the song climbs to it instead of peaking anywhere
+  //   - pickups: some phrases start with one or two notes before the bar line, stepping into the first note
+  //   - anticipations: in pop, rock, soul and Latin styles some downbeat notes arrive an eighth early, tied over
+  function shapeLine(notes, marks, gen, h, r, st, leap) {
+    const M = Melody._;
+    const out = { peak: false, pickups: 0, pushes: 0 };
+    const secs = gen.sections;
+    const inSec = (n, s) => n.s >= s.start * 16 && n.s < (s.start + s.len) * 16;
+    const line = () => { const by = new Map(); for (const n of notes) if (!by.has(n.s) || by.get(n.s).p < n.p) by.set(n.s, n); return [...by.values()].sort((a, b) => a.s - b.s); };
+    // high point
+    const hooks = secs.filter(s => HOOK_TYPES.includes(s.type) && notes.some(n => inSec(n, s)));
+    const peakSec = hooks.filter(s => s.energy >= 5).pop() || hooks.pop();
+    if (peakSec) {
+      const others = notes.filter(n => !inSec(n, peakSec));
+      const otherMax = others.length ? Math.max(...others.map(n => n.p)) : 0;
+      const half = (peakSec.start + Math.floor(peakSec.len / 2)) * 16;
+      const ln = line();
+      const inPeak = ln.filter(n => inSec(n, peakSec) && n.l >= 2);
+      // try the highest notes first, the second half of the chorus before the first
+      const cands = inPeak.slice().sort((a, b) => (b.s >= half) - (a.s >= half) || b.p - a.p);
+      const secMax = Math.max(...notes.filter(n => inSec(n, peakSec)).map(n => n.p));
+      const max = Melody.maxLeap(leap) + 4;
+      if (secMax <= otherMax) {
+        for (const top of cands) {
+          const i = ln.indexOf(top), prev = ln[i - 1], next = ln[i + 1];
+          const pcs = h.chordAt(Math.floor(top.s / 16), top.s % 16);
+          let done = false;
+          for (let p = otherMax + 1; p <= Math.min(otherMax + 7, 91); p++) {
+            if (!pcs.includes(p % 12)) continue;
+            if (prev && Math.abs(p - prev.p) > max) continue;
+            if (next && Math.abs(next.p - p) > max) continue;
+            const d = p - top.p;
+            notes.forEach(n => { if (n.s === top.s && (top.p - n.p) % 12 === 0) n.p += d; });
+            top.v = Math.min(127, top.v + 8);
+            marks.push({ bar: Math.floor(top.s / 16), kind: 'new', label: 'The song\'s high point' });
+            out.peak = done = true;
+            break;
+          }
+          if (done) break;
+        }
+      } else out.peak = true;
+    }
+    // pickups into phrases
+    const pool = M.makePool(h, 48, 91);
+    const sounding = (a, e) => notes.some(n => n.s < e && n.s + n.l > a);
+    for (const sec of secs) {
+      if (!['V', 'C', 'D', 'A', 'P', 'B'].includes(sec.type)) continue;
+      for (let lb = 0; lb < sec.len; lb += 8) {
+        const b = sec.start + lb, a = b * 16;
+        if (a < 4) continue;
+        const first = notes.filter(n => n.s >= a && n.s < a + 4).sort((x, y) => x.s - y.s || y.p - x.p)[0];
+        if (!first || sounding(a - 4, a) || !r.chance(0.45)) continue;
+        const idx = M.nearestIdx(pool, first.p);
+        const two = r.chance(0.5), up = r.chance(0.7) ? -1 : 1;
+        const pk = two ? [[a - 4, idx + 2 * up], [a - 2, idx + up]] : [[a - 2, idx + up]];
+        pk.forEach(([s, i]) => notes.push({ p: pool[M.clampIdx(pool, i)], s, l: 2, v: Math.max(30, first.v - 12) }));
+        out.pickups++;
+      }
+    }
+    // anticipations (pushes)
+    const PUSH = ['Pop', 'Rock', 'Indie', 'Punk', 'R&B / Soul', 'Funk', 'Disco', 'Gospel', 'Latin (salsa)', 'Reggaeton', 'Afrobeats', 'Country', 'Synthwave', 'Hip-hop'];
+    if (PUSH.includes(gen.style)) {
+      for (const n of line()) {
+        if (n.s % 16 !== 0 || n.s < 16 || n.l < 4) continue;
+        const sec = secs.find(s => inSec(n, s));
+        if (!sec || !['V', 'C', 'D', 'A'].includes(sec.type) || n.s === sec.start * 16) continue;
+        if (notes.some(o => o !== n && o.s < n.s && o.s + o.l > n.s - 2) || notes.some(o => o.s >= n.s - 3 && o.s < n.s)) continue;
+        if (!r.chance(0.25)) continue;
+        notes.forEach(o => { if (o.s === n.s) { o.s -= 2; o.l += 2; } });
+        out.pushes++;
+      }
+    }
+    return out;
   }
 
   function describe(gen, bpm, H) {

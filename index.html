@@ -7,16 +7,17 @@
 <meta http-equiv="Expires" content="0">
 <title>MIDI Music Maker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/style.css?v=20261125m">
+<link rel="stylesheet" href="css/style.css?v=20261126a">
 </head>
 <body>
 <header id="topbar">
-  <div class="brand">🎹 <span>MIDI Music Maker</span> <span id="appVersion" class="hint" title="If this does not say v2.4, press Ctrl+F5 to load the newest files">v2.4</span></div>
+  <div class="brand">🎹 <span>MIDI Music Maker</span> <span id="appVersion" class="hint" title="If this does not say v2.6, press Ctrl+F5 to load the newest files">v2.6</span></div>
 
   <div class="group transport">
     <button id="btnPlay" class="big" title="Play / Stop (Space)">▶</button>
     <button id="btnStop" title="Stop and go back to the start">■</button>
     <button id="btnRec" class="toggle" title="Record from your computer keyboard or MIDI keyboard while playing">●</button>
+    <button id="btnScaleKeys" class="toggle" title="Scale keys: keys 1 to 5 play the melody on the notes of the chord that is sounding (1 = the chord's root, then up the scale). Every note is in key. Turn on ● and press Play to record a new melody over the old one. Shift plays an octave higher.">1–5</button>
     <button id="btnLoop" class="toggle on" title="Loop the song">⟲</button>
     <div id="position" class="lcd">1.1.1</div>
   </div>
@@ -91,6 +92,12 @@
   </label>
   <label id="leapLabel" title="How far the melody may jump between notes. Left: it only moves up and down the scale, like most sung melodies. Right: bigger, more adventurous leaps.">Melody leaps
     <input id="inLeap" type="range" min="0" max="100" step="5" value="35"><span id="leapVal" class="leapval">up to a 4th</span>
+  </label>
+  <label id="arpLabel" title="How often the melody plays broken chords (arpeggios): runs through the chord's notes instead of moving up and down the scale. Letting go rebuilds the melody.">Melody arpeggios
+    <input id="inArp" type="range" min="0" max="100" step="5" value="15"><span id="arpVal" class="leapval">a few</span>
+  </label>
+  <label id="chordVarLabel" title="How much the chords vary from section to section. Left: the same chord loop all through. Middle: the usual swaps and the odd colour chord. Right: many swaps, borrowed chords, mediants and suspensions. Used by Generate.">Chord variety
+    <input id="inChordVar" type="range" min="0" max="100" step="5" value="50"><span id="chordVarVal" class="leapval">some</span>
   </label>
   <button id="btnDrumSounds" title="Switch off drum and percussion sounds you don't want the generator to use">🥁 Drum sounds</button>
   <button id="btnGenerate" class="accent">Generate new song</button>
@@ -216,13 +223,14 @@
   <span class="keys">Click = add note · drag = move · drag edge = resize · right-click / double-click = delete · Shift+drag = select · Space = play · keys Z–M / Q–U = play notes</span>
 </footer>
 
-<script src="js/gm.js?v=20261125m"></script>
-<script src="js/midifile.js?v=20261125m"></script>
-<script src="js/melody.js?v=20261125m"></script>
-<script src="js/songform.js?v=20261125m"></script>
-<script src="js/arrange.js?v=20261125m"></script>
-<script src="js/generator.js?v=20261125m"></script>
-<script src="js/audio.js?v=20261125m"></script>
-<script src="js/app.js?v=20261125m"></script>
+<script src="js/gm.js?v=20261126a"></script>
+<script src="js/midifile.js?v=20261126a"></script>
+<script src="js/melody.js?v=20261126a"></script>
+<script src="js/songform.js?v=20261126a"></script>
+<script src="js/arrange.js?v=20261126a"></script>
+<script src="js/perform.js?v=20261126a"></script>
+<script src="js/generator.js?v=20261126a"></script>
+<script src="js/audio.js?v=20261126a"></script>
+<script src="js/app.js?v=20261126a"></script>
 </body>
 </html>

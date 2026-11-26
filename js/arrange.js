@@ -261,7 +261,40 @@
     return c;
   }
 
-  const api = { planBass, patternPitch, fixParallels, countParallels, rangeOf, fitOctaves, intoRange, melodyProfile, melodyAt, voiceLead, voicePower, laneUnder, bassNote, parallelPerfect, motion };
+  // v2.5 (gap 12): the whole texture against the melody. An accompaniment note a semitone (or a major seventh /
+  // minor ninth) from a melody note sounding at the same moment on a beat rubs; arrangers leave that note out of
+  // the voicing. Chord parts drop the note when the hit keeps at least two others; single lines (arpeggio,
+  // counter-melody) move it to the nearest other chord tone. Notes in unison with the melody are treated the same.
+  // pcsAt(step) gives the chord's pitch classes. Returns { notes, fixed }.
+  function clearClashes(notes, melody, pcsAt, chordPart) {
+    if (!melody || !melody.length) return { notes, fixed: 0 };
+    const mAt = t => { let best = null; for (const m of melody) if (m.s <= t && m.s + m.l > t && (!best || m.p > best.p)) best = m; return best; };
+    const byS = new Map();
+    for (const n of notes) { if (!byS.has(n.s)) byS.set(n.s, []); byS.get(n.s).push(n); }
+    const drop = new Set();
+    let fixed = 0;
+    for (const n of notes) {
+      if (n.s % 4 !== 0) continue;
+      const m = mAt(n.s);
+      if (!m || m.l < 2) continue;
+      const d = ((n.p - m.p) % 12 + 12) % 12;
+      const clash = d === 1 || d === 11 || (n.p === m.p);
+      if (!clash) continue;
+      const hit = byS.get(n.s).filter(x => !drop.has(x));
+      if (chordPart && hit.length >= 3) { drop.add(n); fixed++; continue; }
+      const pcs = pcsAt(n.s);
+      let best = null, bs = Infinity;
+      for (let k = -5; k <= 5; k++) {
+        const q = n.p + k, dq = ((q - m.p) % 12 + 12) % 12;
+        if (!k || !pcs.includes(((q % 12) + 12) % 12) || dq === 1 || dq === 11 || q === m.p) continue;
+        if (Math.abs(k) < bs) { bs = Math.abs(k); best = q; }
+      }
+      if (best != null) { n.p = best; fixed++; }
+    }
+    return { notes: drop.size ? notes.filter(n => !drop.has(n)) : notes, fixed };
+  }
+
+  const api = { clearClashes, planBass, patternPitch, fixParallels, countParallels, rangeOf, fitOctaves, intoRange, melodyProfile, melodyAt, voiceLead, voicePower, laneUnder, bassNote, parallelPerfect, motion };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Arrange = api;
 })(this);

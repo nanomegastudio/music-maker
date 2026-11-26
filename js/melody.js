@@ -277,8 +277,21 @@
     return notes;
   }
 
+  // v2.5: "Melody arpeggios" (0..1): how often a melody cell is a broken chord (it outlines the chord's notes
+  // in thirds instead of moving by step). Set per song from the generator.
+  let ARP = 0;
+  const setArp = x => { ARP = Math.max(0, Math.min(1, +x || 0)); };
+  const ARP_CELLS = [[[0, 2], [2, 2], [4, 2], [6, 2]], [[0, 2], [2, 2], [4, 4]], [[0, 1], [1, 1], [2, 2], [4, 4]], [[0, 3], [3, 3], [6, 2]], [[0, 2], [2, 2], [4, 2], [6, 2], [8, 4]]];
+  function arpMotif(r) {
+    const rhythm = r.pick(ARP_CELLS).map(x => x.slice());
+    const dir = r.chance(0.65) ? 1 : -1;
+    // up (or down) the chord, sometimes turning back at the top
+    const moves = rhythm.map((_, i) => i === 0 ? 0 : (i === rhythm.length - 1 && r.chance(0.4) ? -2 * dir : 2 * dir));
+    return { rhythm, moves, arp: true };
+  }
   // a 2-4 note seed inside one bar: rhythm cells from the style, moves in scale steps
   function makeMotif(st, r, leap) {
+    if (ARP > 0 && r() < ARP * 0.8) return arpMotif(r);
     let rhythm = [];
     let tries = 0;
     while (rhythm.length < 2 && tries++ < 10) {
@@ -301,14 +314,15 @@
     if (aLen > 16) return a;                                          // already two bars long
     const sig = a.rhythm.map(x => x[0]).join();
     let cell = [];
-    for (let t = 0; t < 6 && (!cell.length || cell.map(x => x[0]).join() === sig); t++) cell = r.pick(st.cells).filter(([s]) => s < 8).map(x => x.slice());
+    for (let t = 0; t < 6 && (!cell.length || cell.map(x => x[0]).join() === sig); t++) cell = (ARP > 0 && r() < ARP * 0.6 ? arpMotif(r).rhythm : r.pick(st.cells)).filter(([s]) => s < 8).map(x => x.slice());
     if (!cell.length) cell = [[0, 4], [4, 4]];
     cell = cell.slice(0, 3).map(([s, l]) => [16 + s, Math.min(l, 8 - s)]);
     cell.push([24, r.chance(0.6) ? 8 : 6]);                           // the long arrival note
     const rhythm = a.rhythm.concat(cell);
-    const moves = a.moves.concat(cell.map((_, i) => i === 0 ? stepMove(r, leap) || (r.chance(0.5) ? 1 : -1) : stepMove(r, leap)));
+    const moves = a.arp ? a.moves.concat(cell.map((_, i) => i === 0 ? -2 : (r.chance(0.5) ? 2 : -2)))
+      : a.moves.concat(cell.map((_, i) => i === 0 ? stepMove(r, leap) || (r.chance(0.5) ? 1 : -1) : stepMove(r, leap)));
     const text = a.text ? a.text.concat(cell.map(() => null)) : null;
-    return { rhythm, moves, shift: a.shift || 0, text, phrase: !!a.phrase, idea: true };
+    return { rhythm, moves, shift: a.shift || 0, text, phrase: !!a.phrase, idea: true, arp: !!a.arp };
   }
   // fresh material for one bar: a new cell, optionally keeping the rhythm of a bar of the idea (development)
   function freshCell(st, r, leap, rhythmOf) {
@@ -319,7 +333,7 @@
   // the rhythm of one bar of a motif (k = 0 or 1), moved to start at 0
   const barRhythm = (m, k) => m.rhythm.filter(([s]) => s >= k * 16 && s < k * 16 + 16).map(([s, l]) => [s - k * 16, l]);
 
-  const copy = m => ({ rhythm: m.rhythm.map(x => x.slice()), moves: m.moves.slice(), shift: m.shift || 0, text: m.text ? m.text.slice() : null, phrase: !!m.phrase });
+  const copy = m => ({ rhythm: m.rhythm.map(x => x.slice()), moves: m.moves.slice(), shift: m.shift || 0, text: m.text ? m.text.slice() : null, phrase: !!m.phrase, arp: !!m.arp });
   const span = m => Math.max(...m.rhythm.map(([s, l]) => s + l));
 
   // the variation toolkit
@@ -351,20 +365,30 @@
       return c;
     },
     widen: m => { const c = copy(m); const k = c.moves.findIndex((x, i) => i && Math.abs(x) >= 2); if (k > 0) c.moves[k] += Math.sign(c.moves[k]); return c; },
+    // v2.5: the same rhythm as a broken chord (long notes split into eighths, moving through the chord's notes)
+    arpeggiate: m => {
+      const c = copy(m); c.arp = true;
+      const rh = [], tx = c.text ? [] : null;
+      c.rhythm.forEach(([s, l], i) => { if (l >= 4 && l % 2 === 0 && rh.length < 8) { for (let k = 0; k < l; k += 2) { rh.push([s + k, 2]); if (tx) tx.push(k ? '' : c.text[i]); } } else { rh.push([s, l]); if (tx) tx.push(c.text[i]); } });
+      const dir = (m.moves.reduce((a, x) => a + x, 0) >= 0) ? 1 : -1;
+      c.rhythm = rh; c.text = tx; c.moves = rh.map((_, i) => i ? 2 * dir : 0);
+      return c;
+    },
     invert: m => { const c = copy(m); c.moves = c.moves.map(x => -x); return c; }
   };
   const VARY_WEIGHTS = [['transposeToChord', 3], ['sequenceUp', 2], ['sequenceDown', 2], ['changeEnding', 3], ['rhythmShift', 1],
     ['augment', 1], ['diminish', 1], ['ornament', 2], ['widen', 1], ['invert', 0.5]];
   function vary(m, r) {
-    const total = VARY_WEIGHTS.reduce((a, [, w]) => a + w, 0);
+    const weights = VARY_WEIGHTS.concat(ARP > 0 ? [['arpeggiate', ARP * 4]] : []);
+    const total = weights.reduce((a, [, w]) => a + w, 0);
     let x = r() * total;
-    for (const [name, w] of VARY_WEIGHTS) { if ((x -= w) < 0) return { motif: VARY[name](m, r), op: name }; }
+    for (const [name, w] of weights) { if ((x -= w) < 0) return { motif: VARY[name](m, r), op: name }; }
     return { motif: copy(m), op: 'transposeToChord' };
   }
   const head = m => ({ rhythm: m.rhythm.slice(0, 2), moves: m.moves.slice(0, 2), shift: 0, text: m.text ? m.text.slice(0, 2) : null, phrase: !!m.phrase });
   const OP_NAMES = { transposeToChord: 'moved to the new chord', sequenceUp: 'sequence, a step up', sequenceDown: 'sequence, a step down',
     changeEnding: 'new ending', rhythmShift: 'shifted rhythm', augment: 'slower (augmented)', diminish: 'faster (diminished)',
-    ornament: 'passing notes added', widen: 'wider leap', invert: 'inverted' };
+    ornament: 'passing notes added', widen: 'wider leap', invert: 'inverted', arpeggiate: 'broken chord (arpeggio)' };
 
   // Place a motif in one bar. anchor = pool index the line is coming from.
   function realize(m, pool, h, bar, anchor, r, opts = {}) {
@@ -378,6 +402,7 @@
       // gap fill: pull back toward the middle of the range after drifting to an edge
       if (idx < 2) idx += 2; if (idx > pool.length - 3) idx -= 2;
       if (s % 8 === 0 && i > 0) idx = snapIdx(pool, idx, pcsAt(s), 1);
+      else if (m.arp && i > 0) idx = snapIdx(pool, idx, pcsAt(s), 1);       // a broken chord stays on the chord's notes
       const n = { p: pool[idx], s: bar * 16 + s, l, v: vel(r, opts.vel + (s % 8 === 0 ? 8 : 0)) };
       if (m.text && m.text[i]) n.t = m.text[i];
       notes.push(n);
@@ -387,7 +412,17 @@
 
   // Cadence bar: step toward the target scale degree and hold it (phrase-final lengthening)
   function cadence(pool, h, bar, anchor, r, opts) {
-    const targetPc = opts.open ? degreePc(h, r.chance(0.5) ? 4 : 1) : h.key % 12;
+    // v2.5: the goal note is chosen with the chord it lands on (the held note starts around beat 3):
+    // a closed ending takes the home note if that chord has it, else the chord's root; an open one the 5th or 2nd
+    // degree if the chord has one, else any chord tone (no more "lands home" over a chord without the home note)
+    const pcs = h.chordAt(bar, 8);
+    const want = opts.open ? [degreePc(h, 4), degreePc(h, 1)] : [h.key % 12];
+    let goals = want.filter(pc => pcs.includes(pc));
+    if (!goals.length) goals = opts.open ? pcs.slice() : [pcs[0]];
+    const inPool = pc => pool.some(p => p % 12 === pc);
+    goals = goals.filter(inPool);
+    if (!goals.length) goals = opts.open ? [degreePc(h, 4)] : [h.key % 12];
+    const targetPc = opts.open && goals.length > 1 ? r.pick(goals) : goals[0];
     let target = anchor;
     for (let d = 0; d < 7; d++) {
       if (pool[clampIdx(pool, anchor - d)] % 12 === targetPc) { target = clampIdx(pool, anchor - d); break; }
@@ -480,7 +515,7 @@
     const cadOpts = open => Object.assign({}, opts, { open, cells });
     const cadLabel = open => open ? 'Cadence, left open' : 'Cadence, lands home';
     const idea = m.idea ? m : makeIdea(S, r, leap, m);
-    const varyIdea = () => { const op = r.pick(IDEA_OPS); ops.push(op); return { motif: VARY[op](copy(idea), r), op }; };
+    const varyIdea = () => { const op = ARP > 0 && r() < ARP * 0.5 ? 'arpeggiate' : r.pick(IDEA_OPS); ops.push(op); return { motif: VARY[op](copy(idea), r), op }; };
     if (form === 'sentence') {
       const a0 = realize(idea, pool, h, B(0), cur, r, opts); add(a0); mark(0, 'motif', 'Idea');
       const op = r.pick(['sequenceUp', 'sequenceDown', 'transposeToChord', 'changeEnding']); ops.push(op);
@@ -512,6 +547,7 @@
 
   // A whole melody: verse A A', chorus B B' (chorus motif = phrase riff when one is given)
   function composeMelody(h, st, bars, r, opts = {}) {
+    if (h && typeof h.arp === 'number') setArp(h.arp);
     const pool = makePool(h, 60, 84);
     const forms = ['sentence', 'period', 'call'];
     const form = opts.form && opts.form !== 'auto' ? opts.form : r.pick(forms);
@@ -552,7 +588,9 @@
         marks.push({ bar: b, kind: 'vary', label: 'Motif, new ending', phrase: !!A.phrase });
       }
       const out = notes.filter(n => n.s < bars * 16).map(n => Object.assign(n, { l: Math.min(n.l, bars * 16 - n.s) }));
-      return { notes: limitLeaps(out, h), form, ops, marks: marks.filter(mk => mk.bar < bars) };
+      const lim = limitLeaps(out, h);
+      treatNonChordTones(lim, h);
+      return { notes: lim, form, ops, marks: marks.filter(mk => mk.bar < bars) };
     }
     const phrases = Math.max(1, Math.floor(bars / 4));
     let plan;
@@ -584,7 +622,59 @@
       marks.push({ bar: b, kind: 'vary', label: 'Motif, new ending', phrase: !!A.phrase });
     }
     const out = notes.filter(n => n.s < bars * 16).map(n => Object.assign(n, { l: Math.min(n.l, bars * 16 - n.s) }));
-    return { notes: limitLeaps(out, h), form, ops, marks: marks.filter(mk => mk.bar < bars) };
+    const lim = limitLeaps(out, h);
+    treatNonChordTones(lim, h);
+    return { notes: lim, form, ops, marks: marks.filter(mk => mk.bar < bars) };
+  }
+
+  // ===========================================================================
+  // v2.5 (gap 4): notes off the chord, treated the way composers use them
+  // ===========================================================================
+  // Every melody note that is not in the chord under it must be one of the known non-chord tones, or it is moved
+  // to the nearest chord tone (preferring one a step from the note before):
+  //   passing (step in, step on in the same direction), neighbour (step away and back), appoggiatura or suspension
+  //   (on the beat, held over or leapt to, resolving by step to a chord tone, at most a half note), anticipation
+  //   (a short note that repeats into the next chord), escape tone (a short note stepped into, left by leap).
+  // Long notes off the beat count as strong. Over colour chords the chord's own altered note replaces the scale
+  // note a semitone from it (an A over a borrowed iv in C becomes A♭).
+  function treatNonChordTones(notes, h) {
+    const sc = GM.SCALES[h.scale] || GM.SCALES['Major'];
+    const inScale = pc => sc.includes(((pc - h.key) % 12 + 12) % 12);
+    const byS = new Map();
+    for (const n of notes) { if (!byS.has(n.s)) byS.set(n.s, []); byS.get(n.s).push(n); }
+    const line = [...byS.values()].map(g => g.reduce((a, x) => x.p > a.p ? x : a, g[0])).sort((a, b) => a.s - b.s);
+    const move = (n, d) => { for (const x of byS.get(n.s)) if (x === n || (n.p - x.p) % 12 === 0) x.p = Math.max(0, Math.min(127, x.p + d)); };
+    const pc = p => ((p % 12) + 12) % 12;
+    const pcsAt = n => h.chordAt(Math.floor(n.s / 16), n.s % 16);
+    let colour = 0, fixed = 0, kept = 0;
+    for (let i = 0; i < line.length; i++) {
+      const n = line[i], prev = line[i - 1], next = line[i + 1];
+      const pcs = pcsAt(n);
+      if (pcs.includes(pc(n.p))) continue;
+      // colour chord: its altered note replaces the clashing scale note
+      const alt = pcs.find(c => !inScale(c) && [1, 11].includes(((c - pc(n.p)) % 12 + 12) % 12));
+      if (alt != null) { const d = ((alt - pc(n.p) + 6) % 12 + 12) % 12 - 6; move(n, d); colour++; continue; }
+      const strong = n.s % 4 === 0 || n.l >= 6;
+      const step = (a, b) => a && b && Math.abs(a.p - b.p) >= 1 && Math.abs(a.p - b.p) <= 2;
+      const ct = x => x && pcsAt(x).includes(pc(x.p));
+      const gapNext = next ? next.s - (n.s + n.l) : 99;
+      let ok = false;
+      if (!strong && n.l <= 4 && step(prev, n) && step(n, next) && Math.sign(n.p - prev.p) === Math.sign(next.p - n.p)) ok = true;   // passing
+      else if (!strong && n.l <= 4 && step(prev, n) && next && next.p === prev.p) ok = true;                                          // neighbour
+      else if (n.l <= 8 && step(n, next) && ct(next) && gapNext <= 1 && (next.p < n.p || n.s % 8 === 0)) ok = true;                // appoggiatura / suspension
+      else if (n.l <= 2 && next && next.p === n.p && ct(next)) ok = true;                                                            // anticipation
+      else if (n.l <= 2 && !strong && step(prev, n) && ct(prev)) ok = true;                                                          // escape tone
+      if (ok) { kept++; continue; }
+      // repair: the nearest chord tone, a step from the previous note if possible
+      let best = null, bs = Infinity;
+      for (let d = -4; d <= 4; d++) {
+        if (!d || !pcs.includes(pc(n.p + d))) continue;
+        const sc2 = Math.abs(d) + (prev && Math.abs(n.p + d - prev.p) <= 2 ? -0.5 : 0) + (prev && Math.abs(n.p + d - prev.p) > 7 ? 3 : 0);
+        if (sc2 < bs) { bs = sc2; best = d; }
+      }
+      if (best != null) { move(n, best); fixed++; }
+    }
+    return { colour, fixed, kept };
   }
 
   // ===========================================================================
@@ -642,7 +732,7 @@
     let runs = 0, run = 1;
     for (let i = 1; i < ns.length; i++) { if (ns[i].p === ns[i - 1].p) { if (++run === 4) runs++; } else run = 1; }
     // the leap setting decides how stepwise the ear expects the line to be
-    const leap = leapOf(h), stepTarget = 0.86 - 0.4 * leap;
+    const leap = leapOf(h), stepTarget = Math.max(0.2, 0.86 - 0.4 * leap - 0.45 * ARP);
     const stepsScore = 1 - Math.min(1, Math.abs(steps - stepTarget) * 2.5);
     const tooFar = iv.filter(x => Math.abs(x) > maxLeap(leap)).length / iv.length;
     const parts = { steps: stepsScore, gapFill, arch, range, chordTones, ending, reuse, peak, dominance: 1 - dominance };
@@ -734,7 +824,7 @@
     return notes;
   }
 
-  const api = { analyzePhrase, syllabify, phraseToRiff, phraseMotif, composeMelody, bestMelody, scoreMelody, repitch, answer, makeMotif, VARY, limitLeaps, maxLeap,
+  const api = { setArp, treatNonChordTones, analyzePhrase, syllabify, phraseToRiff, phraseMotif, composeMelody, bestMelody, scoreMelody, repitch, answer, makeMotif, VARY, limitLeaps, maxLeap,
     _: { makePool, nearestIdx, clampIdx, snapIdx, buildPhrase, buildPhrase8, makeIdea, freshCell, cadence, realize, copy, head, vary, VARY, OP_NAMES, IDEA_OPS } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Melody = api;
